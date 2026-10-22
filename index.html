@@ -46,7 +46,7 @@ html{-webkit-text-size-adjust:100%}
 body{margin:0}
 :root{padding-top:env(safe-area-inset-top,0px);padding-bottom:env(safe-area-inset-bottom,0px)}
 img{max-width:100%}
-html,body{background:var(--ink);color:var(--fg)}
+html,body{background:var(--ink);color:var(--fg);overflow-x:hidden}
 body{font-family:var(--f-body);font-size:15px;line-height:1.5;min-height:100vh;position:relative;isolation:isolate}
 body::after{content:"";position:fixed;inset:0;z-index:-2;background:url("castelldans.jpg") center 40%/cover no-repeat}
 body::before{content:"";position:fixed;inset:0;z-index:-1;
@@ -104,6 +104,7 @@ section.panel.on{display:block;animation:rise .35s ease}
 @keyframes rise{from{transform:translateY(6px);opacity:.6}to{transform:none;opacity:1}}
 .card{background:var(--glass);border:1px solid var(--line);border-radius:var(--r);padding:18px;backdrop-filter:blur(14px);-webkit-backdrop-filter:blur(14px);min-width:0}
 .grid{display:grid;gap:14px}
+.grid>*{min-width:0}
 .g2{grid-template-columns:repeat(2,minmax(0,1fr))}
 .g3{grid-template-columns:repeat(3,minmax(0,1fr))}
 .g4{grid-template-columns:repeat(4,minmax(0,1fr))}
@@ -203,7 +204,7 @@ input[type=range]{width:100%;accent-color:var(--ochre)}
 .imp .v{font-family:var(--f-mono);font-size:1.4rem}
 .imp .prog{height:6px;border-radius:99px;background:rgba(255,255,255,.08);overflow:hidden}
 .imp .prog i{display:block;height:100%;background:var(--olive)}
-.win{display:flex;gap:2px;overflow-x:auto;padding-bottom:4px}
+.win{display:flex;gap:2px;overflow-x:auto;padding-bottom:4px;max-width:100%}
 .win span{flex:none;width:9px;height:34px;border-radius:3px}
 .win span.dsep{margin-left:8px}
 .note{font-size:.8rem;color:var(--faint);line-height:1.45}
