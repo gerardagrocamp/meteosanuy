@@ -6,6 +6,12 @@
 <title>MeteoSanuy</title>
 <meta name="description" content="El tiempo en tu pueblo: previsión, historial, radar, riesgo de plagas en frutales y calendario lunar con festivos.">
 <meta name="theme-color" content="#0d1619">
+<link rel="manifest" href="manifest.webmanifest">
+<link rel="apple-touch-icon" href="icons/apple-touch-icon.png">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-title" content="MeteoSanuy">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
 <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 64 64'%3E%3Ccircle cx='24' cy='26' r='11' fill='%23e9b949'/%3E%3Cpath d='M18 46h30a10 10 0 0 0 0-20 13 13 0 0 0-25-2 9 9 0 0 0-5 22z' fill='%23eef3ef'/%3E%3C/svg%3E">
 <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.css">
 <script src="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.js"></script>
@@ -1207,6 +1213,9 @@ async function boot(){
   document.addEventListener('visibilitychange',()=>{if(!document.hidden&&W&&W.source==='live'&&Date.now()-(S.lastLoad||0)>30*60e3)refreshLive()});
 }
 boot();
+if('serviceWorker' in navigator&&(location.protocol==='https:'||location.hostname==='localhost')){
+  window.addEventListener('load',()=>navigator.serviceWorker.register('sw.js').catch(e=>console.warn('SW',e)));
+}
 })();
 </script>
 </body>
