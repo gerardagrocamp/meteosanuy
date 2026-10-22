@@ -1,6 +1,6 @@
 // MeteoSanuy · service worker
 // Guarda la app para abrirla sin conexión. Los datos del tiempo siempre se piden a internet.
-const VERSION = 'meteosanuy-v3';
+const VERSION = 'meteosanuy-v4';
 const APP = ['./', './index.html', './data.json', './castelldans.jpg', './manifest.webmanifest',
   './icon-192.png', './icon-512.png', './maskable-192.png', './maskable-512.png'];
 const LIBS = ['cdnjs.cloudflare.com', 'fonts.googleapis.com', 'fonts.gstatic.com'];
