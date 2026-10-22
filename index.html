@@ -1,0 +1,1213 @@
+<!doctype html>
+<html lang="es">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<title>MeteoSanuy</title>
+<meta name="description" content="El tiempo en tu pueblo: previsión, historial, radar, riesgo de plagas en frutales y calendario lunar con festivos.">
+<meta name="theme-color" content="#0d1619">
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 64 64'%3E%3Ccircle cx='24' cy='26' r='11' fill='%23e9b949'/%3E%3Cpath d='M18 46h30a10 10 0 0 0 0-20 13 13 0 0 0-25-2 9 9 0 0 0-5 22z' fill='%23eef3ef'/%3E%3C/svg%3E">
+<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.css">
+<script src="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.js"></script>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:opsz,wght@12..96,400;12..96,600;12..96,800&family=Figtree:wght@400;500;600;700&family=IBM+Plex+Mono:wght@400;500&display=swap">
+<script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.1/chart.umd.min.js"></script>
+<style>
+/* Layout: la foto de Castelldans fija al fondo, velada; paneles de vidrio esmerilado encima.
+   Un solo mundo visual oscuro (cielo de tarde sobre Les Garrigues). */
+:root{
+  color-scheme: dark;
+  --ink:#0d1619;           /* fondo base bajo la foto */
+  --glass:rgba(16,28,32,.62);
+  --glass-2:rgba(22,38,43,.78);
+  --line:rgba(205,226,222,.14);
+  --fg:#eef3ef;
+  --muted:#a9bab5;
+  --faint:#7d8f8a;
+  --ochre:#e9b949;         /* sol de les Garrigues: acento */
+  --olive:#9cbc5a;         /* hoja de olivo */
+  --sky:#86bde3;
+  --rain:#5aa2ff;
+  --ok:#6fcf97; --warn:#f2b53a; --bad:#f07a3d; --crit:#e5484d;
+  --f-display:"Bricolage Grotesque","Trebuchet MS",system-ui,sans-serif;
+  --f-body:"Figtree",system-ui,-apple-system,"Segoe UI",sans-serif;
+  --f-mono:"IBM Plex Mono",ui-monospace,"SFMono-Regular",Menlo,monospace;
+  --r:18px;
+}
+[hidden]{display:none!important}
+*,*::before,*::after{box-sizing:border-box}
+html{-webkit-text-size-adjust:100%}
+body{margin:0}
+:root{padding-top:env(safe-area-inset-top,0px);padding-bottom:env(safe-area-inset-bottom,0px)}
+img{max-width:100%}
+html,body{background:var(--ink);color:var(--fg)}
+body{font-family:var(--f-body);font-size:15px;line-height:1.5;min-height:100vh;position:relative;isolation:isolate}
+body::after{content:"";position:fixed;inset:0;z-index:-2;background:url("castelldans.jpg") center 40%/cover no-repeat}
+body::before{content:"";position:fixed;inset:0;z-index:-1;
+  background:linear-gradient(180deg,rgba(9,16,19,.35) 0%,rgba(9,16,19,.72) 38%,rgba(9,16,19,.9) 75%,rgba(9,16,19,.95) 100%)}
+.wrap{max-width:1180px;margin:0 auto;padding-left:max(16px,env(safe-area-inset-left,0px));padding-right:max(16px,env(safe-area-inset-right,0px));padding-block:0 48px}
+button{font:inherit;color:inherit;cursor:pointer}
+:focus-visible{outline:2px solid var(--ochre);outline-offset:2px;border-radius:8px}
+.num{font-family:var(--f-mono);font-variant-numeric:tabular-nums}
+h1,h2,h3{font-family:var(--f-display);text-wrap:balance;margin:0;line-height:1.1}
+h2{font-size:clamp(1.3rem,2.6vw,1.75rem);font-weight:800;letter-spacing:-.01em}
+h3{font-size:1.05rem;font-weight:600}
+.eyebrow{font-size:.72rem;text-transform:uppercase;letter-spacing:.14em;color:var(--muted);font-weight:600}
+.muted{color:var(--muted)} .faint{color:var(--faint)}
+a{color:var(--sky)}
+
+/* barra superior */
+.top{display:flex;align-items:center;gap:12px;flex-wrap:wrap;padding-block:18px 8px}
+.brand{display:flex;align-items:center;gap:10px;margin-right:auto}
+.brand b{font-family:var(--f-display);font-weight:800;font-size:1.45rem;letter-spacing:-.02em}
+.brand b span{color:var(--ochre)}
+.chip{display:inline-flex;align-items:center;gap:8px;padding:8px 14px;border-radius:999px;background:var(--glass);border:1px solid var(--line);backdrop-filter:blur(10px);-webkit-backdrop-filter:blur(10px);font-weight:600}
+.chip:hover{border-color:rgba(233,185,73,.5)}
+.status{font-size:.8rem;font-weight:500;color:var(--muted)}
+.dot{width:8px;height:8px;border-radius:50%;background:var(--faint);flex:none}
+.dot.live{background:var(--ok);box-shadow:0 0 0 0 rgba(111,207,151,.6);animation:pulse 2s infinite}
+.dot.saved{background:var(--warn)}
+@keyframes pulse{70%{box-shadow:0 0 0 8px rgba(111,207,151,0)}100%{box-shadow:0 0 0 0 rgba(111,207,151,0)}}
+
+/* hero */
+.hero{display:grid;grid-template-columns:minmax(0,1.2fr) minmax(0,1fr);gap:18px;align-items:end;padding-block:28px 22px}
+.place{font-size:clamp(2.2rem,6vw,4rem);font-weight:800;letter-spacing:-.03em}
+.place small{display:block;font-family:var(--f-body);font-size:.95rem;font-weight:500;color:var(--muted);letter-spacing:0;margin-top:6px}
+.now{display:flex;align-items:center;gap:16px;margin-top:18px}
+.now .t{font-family:var(--f-display);font-size:clamp(4rem,11vw,6.5rem);font-weight:400;line-height:.9;letter-spacing:-.04em}
+.now .t sup{font-size:.4em;color:var(--muted);vertical-align:top;margin-left:2px}
+.now .ic{width:96px;height:96px;flex:none}
+.now .desc{font-size:1.1rem;font-weight:600}
+.minis{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:10px}
+.mini{background:var(--glass);border:1px solid var(--line);border-radius:14px;padding:10px 12px;backdrop-filter:blur(12px);-webkit-backdrop-filter:blur(12px);min-width:0}
+.mini .v{font-family:var(--f-mono);font-size:1.15rem;font-variant-numeric:tabular-nums}
+.mini .l{font-size:.72rem;color:var(--muted);text-transform:uppercase;letter-spacing:.08em}
+
+/* navegación */
+.nav{position:sticky;top:env(safe-area-inset-top,0px);z-index:20;margin-inline:calc(-1 * max(16px,env(safe-area-inset-left,0px)));padding:10px max(16px,env(safe-area-inset-left,0px));background:rgba(10,18,21,.78);backdrop-filter:blur(14px);-webkit-backdrop-filter:blur(14px);border-bottom:1px solid var(--line)}
+.nav-in{display:flex;gap:6px;overflow-x:auto;scrollbar-width:none}
+.nav-in::-webkit-scrollbar{display:none}
+.tab{flex:none;display:flex;align-items:center;gap:8px;padding:9px 14px;border-radius:12px;background:transparent;border:1px solid transparent;color:var(--muted);font-weight:600;white-space:nowrap}
+.tab svg{width:18px;height:18px}
+.tab:hover{color:var(--fg)}
+.tab[aria-selected="true"]{background:var(--fg);color:var(--ink)}
+.tab .n{font-family:var(--f-mono);font-size:.72rem;opacity:.6}
+
+section.panel{display:none;padding-top:22px}
+section.panel.on{display:block;animation:rise .35s ease}
+@keyframes rise{from{transform:translateY(6px);opacity:.6}to{transform:none;opacity:1}}
+.card{background:var(--glass);border:1px solid var(--line);border-radius:var(--r);padding:18px;backdrop-filter:blur(14px);-webkit-backdrop-filter:blur(14px);min-width:0}
+.grid{display:grid;gap:14px}
+.g2{grid-template-columns:repeat(2,minmax(0,1fr))}
+.g3{grid-template-columns:repeat(3,minmax(0,1fr))}
+.g4{grid-template-columns:repeat(4,minmax(0,1fr))}
+.head{display:flex;align-items:baseline;justify-content:space-between;gap:12px;flex-wrap:wrap;margin-bottom:12px}
+.seg{display:inline-flex;background:rgba(255,255,255,.06);border:1px solid var(--line);border-radius:12px;padding:3px;gap:2px;flex-wrap:wrap}
+.seg button{border:0;background:transparent;padding:6px 12px;border-radius:9px;color:var(--muted);font-weight:600;font-size:.88rem}
+.seg button[aria-pressed="true"]{background:var(--ochre);color:#1b1505}
+.stack>*+*{margin-top:14px}
+
+/* widgets previsión */
+.wbox{display:flex;flex-direction:column;align-items:center;gap:6px;text-align:center}
+.wbox svg{max-width:100%}
+.hours{display:flex;gap:6px;overflow-x:auto;padding-bottom:6px;scrollbar-width:thin}
+.hr{flex:none;width:62px;text-align:center;padding:8px 4px;border-radius:12px;border:1px solid transparent}
+.hr.cur{border-color:rgba(233,185,73,.55);background:rgba(233,185,73,.08)}
+.hr .h{font-size:.75rem;color:var(--muted)}
+.hr svg{width:34px;height:34px;display:block;margin:4px auto}
+.hr .tt{font-family:var(--f-mono);font-weight:500}
+.hr .pp{font-size:.7rem;color:var(--rain);font-family:var(--f-mono);min-height:1em}
+.hr.dayb{border-left:1px dashed var(--line);border-radius:0 12px 12px 0}
+.days{display:flex;flex-direction:column}
+.day{display:grid;grid-template-columns:86px 40px 52px minmax(80px,1fr) 52px 74px;align-items:center;gap:10px;padding:9px 6px;border-bottom:1px solid var(--line);border-radius:10px;background:transparent;border-left:0;border-right:0;border-top:0;text-align:left;width:100%}
+.day:hover{background:rgba(255,255,255,.04)}
+.day[aria-expanded="true"]{background:rgba(233,185,73,.08)}
+.day svg{width:36px;height:36px}
+.day .dn{font-weight:600}
+.day .dn small{display:block;font-weight:400;color:var(--muted);font-size:.75rem}
+.bar{position:relative;height:8px;border-radius:99px;background:rgba(255,255,255,.08)}
+.bar i{position:absolute;top:0;bottom:0;border-radius:99px;background:linear-gradient(90deg,var(--sky),var(--ochre),var(--bad))}
+.daydet{grid-column:1/-1;padding:4px 0 10px}
+.chartbox{position:relative;height:240px}
+.chartbox.tall{height:300px}
+.chartbox.short{height:180px}
+
+/* pills de estado */
+.pill{display:inline-flex;align-items:center;gap:6px;padding:3px 10px;border-radius:999px;font-size:.75rem;font-weight:700;letter-spacing:.02em;white-space:nowrap}
+.lv0{background:rgba(111,207,151,.16);color:var(--ok)}
+.lv1{background:rgba(242,181,58,.16);color:var(--warn)}
+.lv2{background:rgba(240,122,61,.18);color:var(--bad)}
+.lv3{background:rgba(229,72,77,.2);color:#ff8a8d}
+
+/* historial */
+.kpis{display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:10px}
+.kpi{padding:12px 14px;border-radius:14px;background:rgba(255,255,255,.04);border:1px solid var(--line);min-width:0}
+.kpi .v{font-family:var(--f-mono);font-size:1.35rem;font-variant-numeric:tabular-nums}
+.kpi .l{font-size:.75rem;color:var(--muted)}
+.kpi .s{font-size:.75rem;color:var(--faint)}
+.heat{overflow-x:auto}
+.heat svg{display:block}
+.legend{display:flex;align-items:center;gap:8px;font-size:.75rem;color:var(--muted);flex-wrap:wrap}
+.ramp{width:160px;height:8px;border-radius:99px;background:linear-gradient(90deg,#3a6fd8,#86bde3,#e9e3a1,#e9b949,#f07a3d,#c8323a)}
+.tip{position:fixed;z-index:60;pointer-events:none;background:#0b1316;border:1px solid var(--line);border-radius:10px;padding:8px 10px;font-size:.8rem;box-shadow:0 8px 24px rgba(0,0,0,.4);max-width:240px}
+
+/* radar */
+.radar-wrap{display:grid;grid-template-columns:minmax(0,1fr) minmax(0,1fr);gap:14px}
+.radar-img{position:relative;border-radius:14px;overflow:hidden;background:#11191c;aspect-ratio:554/700;max-width:100%}
+.radar-img img{width:100%;height:100%;object-fit:cover;display:block}
+.radar-img .stamp{position:absolute;left:10px;bottom:10px;background:rgba(0,0,0,.65);padding:4px 10px;border-radius:999px;font-size:.78rem;font-family:var(--f-mono)}
+.radar-img .pin{position:absolute;left:50%;top:50%;width:18px;height:18px;margin:-9px 0 0 -9px;border-radius:50%;border:2px solid var(--ochre);box-shadow:0 0 0 6px rgba(233,185,73,.25)}
+.radar-img .busy{position:absolute;inset:0;display:grid;place-items:center;background:rgba(8,14,16,.6);font-weight:600}
+.nc{width:100%;aspect-ratio:1;max-width:100%;border-radius:14px;background:#0f1a1d;display:block}
+.btn{display:inline-flex;align-items:center;gap:8px;padding:9px 14px;border-radius:12px;border:1px solid var(--line);background:rgba(255,255,255,.06);font-weight:600}
+.btn:hover{border-color:rgba(233,185,73,.55)}
+.btn.pri{background:var(--ochre);color:#1b1505;border-color:transparent}
+.btn[disabled]{opacity:.5;cursor:default}
+input[type=range]{width:100%;accent-color:var(--ochre)}
+
+/* cultivos y plagas */
+.crops{display:flex;gap:8px;flex-wrap:wrap}
+.crop{display:flex;align-items:center;gap:8px;padding:8px 14px 8px 8px;border-radius:999px;background:rgba(255,255,255,.05);border:1px solid var(--line);font-weight:600}
+.crop svg{width:28px;height:28px}
+.crop[aria-pressed="true"]{background:var(--fg);color:var(--ink)}
+.gauge{display:flex;align-items:center;gap:16px}
+.pests{display:grid;gap:10px}
+.pest{border:1px solid var(--line);border-radius:16px;background:rgba(255,255,255,.035);overflow:hidden}
+.pest>button{display:grid;grid-template-columns:6px minmax(0,1fr) auto;align-items:stretch;width:100%;background:none;border:0;text-align:left;padding:0}
+.pest .stripe{border-radius:0}
+.pest .ph{padding:14px 14px 12px;display:flex;flex-direction:column;gap:6px;min-width:0}
+.pest .nm{display:flex;align-items:baseline;gap:8px;flex-wrap:wrap}
+.pest .nm b{font-family:var(--f-display);font-size:1.12rem}
+.pest .nm i{color:var(--muted);font-size:.85rem}
+.pest .tags{display:flex;gap:6px;flex-wrap:wrap}
+.tag{font-size:.7rem;padding:2px 8px;border-radius:999px;border:1px solid var(--line);color:var(--muted)}
+.pest .side{display:flex;flex-direction:column;align-items:flex-end;justify-content:center;gap:8px;padding:14px}
+.strip{display:flex;gap:3px}
+.strip span{width:18px;height:22px;border-radius:5px;display:grid;place-items:center;font-size:.6rem;color:rgba(0,0,0,.65);font-weight:700}
+.strip span.today{outline:2px solid var(--fg);outline-offset:1px}
+.why{font-size:.85rem;color:var(--fg);opacity:.9}
+.pd{display:none;padding:0 16px 16px 22px;border-top:1px solid var(--line)}
+.pest.open .pd{display:block}
+.pd .cols{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:14px;margin-top:14px}
+.pd h4{margin:0 0 4px;font-size:.78rem;text-transform:uppercase;letter-spacing:.1em;color:var(--ochre)}
+.pd p,.pd ul{margin:0;font-size:.9rem;color:var(--fg);opacity:.92}
+.pd ul{padding-left:18px}
+.impact{display:grid;grid-template-columns:repeat(auto-fit,minmax(220px,1fr));gap:10px}
+.imp{padding:14px;border-radius:14px;background:rgba(255,255,255,.04);border:1px solid var(--line);display:flex;flex-direction:column;gap:6px;min-width:0}
+.imp .v{font-family:var(--f-mono);font-size:1.4rem}
+.imp .prog{height:6px;border-radius:99px;background:rgba(255,255,255,.08);overflow:hidden}
+.imp .prog i{display:block;height:100%;background:var(--olive)}
+.win{display:flex;gap:2px;overflow-x:auto;padding-bottom:4px}
+.win span{flex:none;width:9px;height:34px;border-radius:3px}
+.win span.dsep{margin-left:8px}
+.note{font-size:.8rem;color:var(--faint);line-height:1.45}
+
+/* calendario lunar */
+.cal-head{display:flex;align-items:center;gap:10px;flex-wrap:wrap}
+.cal{display:grid;grid-template-columns:repeat(7,minmax(0,1fr));gap:6px}
+.cal .dow{font-size:.72rem;text-transform:uppercase;letter-spacing:.1em;color:var(--muted);text-align:center;padding-bottom:4px}
+.cell{position:relative;min-height:92px;border-radius:12px;background:rgba(255,255,255,.035);border:1px solid var(--line);padding:6px;display:flex;flex-direction:column;align-items:center;gap:2px;text-align:center;min-width:0}
+.cell.out{opacity:.3}
+.cell.today{border-color:var(--ochre);box-shadow:inset 0 0 0 1px var(--ochre)}
+.cell .dnum{align-self:flex-start;font-family:var(--f-mono);font-size:.85rem}
+.cell svg{width:30px;height:30px}
+.cell .hol{font-size:.62rem;line-height:1.15;font-weight:600;padding:2px 4px;border-radius:6px;max-width:100%;overflow-wrap:anywhere}
+.h-nac{background:rgba(229,72,77,.22);color:#ffb3b5}
+.h-aut{background:rgba(242,181,58,.2);color:#ffd889}
+.h-loc{background:rgba(156,188,90,.24);color:#d4ef9c}
+.cell.sun .dnum,.cell.holi .dnum{color:#ff9d9f}
+.cell .ph{font-size:.6rem;color:var(--muted)}
+.moonbig{display:flex;align-items:center;gap:18px;flex-wrap:wrap}
+.list{display:flex;flex-direction:column;gap:8px}
+.li{display:flex;align-items:center;gap:10px;padding:8px 10px;border-radius:12px;background:rgba(255,255,255,.04)}
+.li svg{width:26px;height:26px;flex:none}
+
+/* onboarding */
+.ob{position:fixed;inset:0;z-index:80;display:grid;place-items:center;padding:max(16px,env(safe-area-inset-left,0px));background:rgba(6,11,13,.45);backdrop-filter:blur(3px);-webkit-backdrop-filter:blur(3px)}
+.ob-card{width:min(560px,100%);background:rgba(13,23,26,.86);border:1px solid var(--line);border-radius:24px;padding:26px;backdrop-filter:blur(18px);-webkit-backdrop-filter:blur(18px);box-shadow:0 30px 80px rgba(0,0,0,.5)}
+.ob-card h1{font-size:clamp(2rem,6vw,2.8rem);font-weight:800;letter-spacing:-.03em}
+.ob-card h1 span{color:var(--ochre)}
+.ob-q{font-size:1.15rem;font-weight:600;margin:14px 0 12px}
+.search{display:flex;gap:8px}
+.search input{flex:1;min-width:0;padding:12px 14px;border-radius:12px;border:1px solid var(--line);background:rgba(255,255,255,.07);color:var(--fg);font:inherit;font-size:1rem}
+.search input::placeholder{color:var(--faint)}
+.sugg{display:flex;gap:8px;flex-wrap:wrap;margin-top:12px}
+.sugg button{padding:7px 12px;border-radius:999px;border:1px solid var(--line);background:rgba(255,255,255,.05);font-weight:600;font-size:.88rem}
+.sugg button:hover{border-color:var(--ochre)}
+.results{margin-top:12px;display:flex;flex-direction:column;gap:4px;max-height:240px;overflow:auto}
+.results button{text-align:left;padding:10px 12px;border-radius:12px;border:1px solid transparent;background:rgba(255,255,255,.04)}
+.results button:hover{border-color:var(--ochre)}
+.msg{margin-top:12px;font-size:.88rem;padding:10px 12px;border-radius:12px;background:rgba(242,181,58,.12);color:#ffe0a0}
+.msg.err{background:rgba(229,72,77,.15);color:#ffc0c2}
+.loading{display:flex;flex-direction:column;gap:6px;margin-top:14px}
+.step{display:flex;align-items:center;gap:8px;font-size:.9rem;color:var(--muted)}
+.step.on{color:var(--fg)} .step.done{color:var(--ok)}
+.spin{width:14px;height:14px;border-radius:50%;border:2px solid var(--line);border-top-color:var(--ochre);animation:sp 1s linear infinite;flex:none}
+@keyframes sp{to{transform:rotate(360deg)}}
+.toast{position:fixed;left:50%;bottom:calc(18px + env(safe-area-inset-bottom,0px));transform:translateX(-50%);z-index:90;background:#0b1316;border:1px solid var(--line);padding:10px 16px;border-radius:12px;font-size:.88rem;max-width:min(560px,calc(100% - 32px));box-shadow:0 10px 30px rgba(0,0,0,.5)}
+.foot{margin-top:28px;font-size:.78rem;color:var(--faint);line-height:1.6}
+
+/* iconos animados */
+.sunrays{transform-origin:32px 32px;animation:spin 24s linear infinite}
+.drop{animation:fall 1.4s linear infinite}
+@keyframes spin{to{transform:rotate(360deg)}}
+@keyframes fall{0%{transform:translateY(-3px);opacity:0}30%{opacity:1}100%{transform:translateY(6px);opacity:0}}
+@media (prefers-reduced-motion:reduce){*{animation:none!important}}
+
+@media (max-width:900px){
+  .hero{grid-template-columns:1fr}
+  .g4{grid-template-columns:repeat(2,minmax(0,1fr))}
+  .g3{grid-template-columns:repeat(2,minmax(0,1fr))}
+  .radar-wrap{grid-template-columns:1fr}
+}
+@media (max-width:620px){
+  .g2,.g3{grid-template-columns:1fr}
+  .minis{grid-template-columns:repeat(3,minmax(0,1fr))}
+  .day{grid-template-columns:64px 34px 40px minmax(50px,1fr) 40px;font-size:.88rem}
+  .day .mm{display:none}
+  .pd .cols{grid-template-columns:1fr}
+  .pest>button{grid-template-columns:6px minmax(0,1fr)}
+  .pest .side{grid-column:2;align-items:flex-start;padding:0 14px 14px}
+  .cell{min-height:70px;padding:4px 2px}
+  .cell svg{width:22px;height:22px}
+  .cell .hol{font-size:.55rem}
+  .cal{gap:3px}
+  .now .ic{width:72px;height:72px}
+}
+.radar-map{height:520px;border-radius:14px;overflow:hidden;background:#11191c;z-index:0}
+.leaflet-container{background:#11191c;font-family:var(--f-body)}
+.leaflet-control-attribution{background:rgba(10,18,21,.75)!important;color:var(--muted)!important;font-size:10px}
+.leaflet-control-attribution a{color:var(--sky)!important}
+.leaflet-bar a{background:#16252a!important;color:var(--fg)!important;border-color:var(--line)!important}
+.rctl{display:flex;align-items:center;gap:10px;margin-top:10px}
+@media (max-width:620px){.radar-map{height:380px}}
+</style>
+</head>
+<body>
+
+<div class="wrap">
+  <header class="top">
+    <div class="brand">
+      <svg width="34" height="34" viewBox="0 0 64 64" aria-hidden="true"><circle cx="24" cy="26" r="11" fill="#e9b949"/><path d="M18 46h30a10 10 0 0 0 0-20 13 13 0 0 0-25-2 9 9 0 0 0-5 22z" fill="#eef3ef" opacity=".92"/><path d="M27 52c4-7 12-7 16 0" stroke="#9cbc5a" stroke-width="3" fill="none" stroke-linecap="round"/></svg>
+      <b>Meteo<span>Sanuy</span></b>
+    </div>
+    <button class="chip" id="placeBtn" type="button" aria-label="Cambiar población">
+      <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 21s-7-6.2-7-11a7 7 0 0 1 14 0c0 4.8-7 11-7 11z"/><circle cx="12" cy="10" r="2.5"/></svg>
+      <span id="placeChip">Castelldans</span>
+    </button>
+    <span class="chip status" id="statusChip"><span class="dot saved" id="statusDot"></span><span id="statusTxt">Datos guardados</span></span>
+  </header>
+
+  <div class="hero" id="hero">
+    <div>
+      <div class="eyebrow" id="heroEyebrow">Ahora</div>
+      <h1 class="place" id="heroPlace">Castelldans<small id="heroSub">Les Garrigues · Lleida</small></h1>
+      <div class="now">
+        <div class="ic" id="nowIcon"></div>
+        <div>
+          <div class="t num" id="nowT">11<sup>°C</sup></div>
+          <div class="desc" id="nowDesc">Cubierto</div>
+          <div class="muted" id="nowFeel"></div>
+        </div>
+      </div>
+    </div>
+    <div class="minis" id="heroMinis"></div>
+  </div>
+
+  <nav class="nav" aria-label="Secciones">
+    <div class="nav-in" role="tablist">
+      <button class="tab" role="tab" data-tab="prev" aria-selected="true"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="8" cy="9" r="3.5"/><path d="M7 19h11a4 4 0 0 0 0-8 5 5 0 0 0-9.3-1"/></svg><span class="n">1</span>Previsión</button>
+      <button class="tab" role="tab" data-tab="hist" aria-selected="false"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 12a9 9 0 1 0 3-6.7"/><path d="M3 4v4h4"/><path d="M12 7v5l3 2"/></svg><span class="n">2</span>Historial</button>
+      <button class="tab" role="tab" data-tab="radar" aria-selected="false"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="9"/><circle cx="12" cy="12" r="5"/><path d="M12 12l6-6"/></svg><span class="n">3</span>Radar</button>
+      <button class="tab" role="tab" data-tab="crops" aria-selected="false"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="14" r="7"/><path d="M12 7c0-3 2-4 4-4M12 7c-1-2-3-3-5-2"/></svg><span class="n">4</span>Cultivos y plagas</button>
+      <button class="tab" role="tab" data-tab="moon" aria-selected="false"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M20 14.5A8 8 0 0 1 9.5 4a8 8 0 1 0 10.5 10.5z"/></svg><span class="n">5</span>Luna y festivos</button>
+    </div>
+  </nav>
+
+  <!-- 1 · PREVISIÓN -->
+  <section class="panel on" id="p-prev" role="tabpanel">
+    <div class="grid g4" id="fcWidgets"></div>
+    <div class="card" style="margin-top:14px">
+      <div class="head"><h2>Próximas 48 horas</h2><span class="muted" id="h48sub"></span></div>
+      <div class="hours" id="hoursStrip"></div>
+      <div class="chartbox" style="margin-top:12px"><canvas id="c48"></canvas></div>
+    </div>
+    <div class="card" style="margin-top:14px">
+      <div class="head"><h2>Próximos 16 días</h2><span class="muted">Toca un día para ver su evolución por horas</span></div>
+      <div class="days" id="days16"></div>
+    </div>
+  </section>
+
+  <!-- 2 · HISTORIAL -->
+  <section class="panel" id="p-hist" role="tabpanel">
+    <div class="card">
+      <div class="head">
+        <h2>Lo que ha hecho el tiempo</h2>
+        <div class="seg" id="histSeg">
+          <button data-r="7" aria-pressed="false">7 días</button>
+          <button data-r="30" aria-pressed="true">30 días</button>
+          <button data-r="90" aria-pressed="false">90 días</button>
+          <button data-r="year" aria-pressed="false">Este año</button>
+        </div>
+      </div>
+      <div class="kpis" id="histKpis"></div>
+      <div class="chartbox tall" style="margin-top:14px"><canvas id="cHist"></canvas></div>
+    </div>
+    <div class="grid g2" style="margin-top:14px">
+      <div class="card">
+        <div class="head"><h3>Calendario térmico del año</h3><div class="legend"><span>−5°</span><span class="ramp"></span><span>42° máx.</span><span>· punto azul = lluvia ≥ 1 mm</span></div></div>
+        <div class="heat" id="heat"></div>
+      </div>
+      <div class="card">
+        <div class="head"><h3>Resumen mensual</h3><span class="muted">Lluvia y temperaturas medias</span></div>
+        <div class="chartbox"><canvas id="cMonth"></canvas></div>
+      </div>
+    </div>
+  </section>
+
+  <!-- 3 · RADAR -->
+  <section class="panel" id="p-radar" role="tabpanel">
+    <div class="radar-wrap">
+      <div class="card">
+        <div class="head"><h2>Radar de precipitación</h2><button class="btn" id="radarBtn" type="button">Actualizar radar</button></div>
+        <div class="radar-map" id="map" role="img" aria-label="Mapa de radar de precipitación"></div>
+        <div class="rctl">
+          <button class="btn" id="rPlay" type="button" aria-label="Reproducir animación del radar">▶</button>
+          <input type="range" id="rRange" min="0" max="0" value="0" aria-label="Momento del radar">
+          <span class="num" id="radarStamp" style="min-width:92px;text-align:right">–</span>
+        </div>
+        <p class="note" id="radarNote" style="margin-top:10px"></p>
+      </div>
+      <div class="card">
+        <div class="head"><h2>Lluvia próximas 4 h</h2><span class="muted">Radio ~50 km, cada 15 min</span></div>
+        <canvas class="nc" id="nc" width="560" height="560"></canvas>
+        <div style="display:flex;align-items:center;gap:10px;margin-top:10px">
+          <button class="btn" id="ncPlay" type="button" aria-label="Reproducir animación">▶</button>
+          <input type="range" id="ncRange" min="0" max="23" value="8" aria-label="Momento de la previsión">
+          <span class="num" id="ncTime" style="min-width:64px;text-align:right"></span>
+        </div>
+        <div class="legend" style="margin-top:8px"><span>mm / 15 min</span><span style="width:120px;height:8px;border-radius:99px;background:linear-gradient(90deg,#9fd3ff,#3c8dff,#2f5bd8,#e9b949,#e5484d)"></span><span>0,1 → 5+</span></div>
+        <p class="note" id="ncNote" style="margin-top:8px"></p>
+      </div>
+    </div>
+    <div class="card" style="margin-top:14px">
+      <div class="head"><h3>Radares oficiales</h3></div>
+      <div class="sugg" style="margin-top:0">
+        <a class="btn" href="https://www.meteo.cat/observacions/radar" target="_blank" rel="noopener">Radar Meteocat</a>
+        <a class="btn" href="https://www.aemet.es/es/eltiempo/observacion/radar" target="_blank" rel="noopener">Radar AEMET</a>
+        <a class="btn" id="rvLink" href="https://www.rainviewer.com/map.html?loc=41.5,0.77,8" target="_blank" rel="noopener">RainViewer en directo</a>
+      </div>
+    </div>
+  </section>
+
+  <!-- 4 · CULTIVOS -->
+  <section class="panel" id="p-crops" role="tabpanel">
+    <div class="card">
+      <div class="head"><h2>Afectación en los frutales</h2><span class="muted" id="cropAsOf"></span></div>
+      <div class="crops" id="cropSel"></div>
+      <div class="grid g2" style="margin-top:16px;align-items:center">
+        <div class="gauge" id="pressure"></div>
+        <div>
+          <div class="eyebrow" style="margin-bottom:6px">Ventanas de tratamiento · próximas 72 h</div>
+          <div class="win" id="winStrip"></div>
+          <div class="legend" style="margin-top:6px"><span class="pill lv0">Buena</span><span class="pill lv1">Regular</span><span class="pill lv3">No tratar</span><span id="winBest"></span></div>
+        </div>
+      </div>
+    </div>
+    <div class="card" style="margin-top:14px">
+      <div class="head"><h2>Cómo ha afectado el tiempo</h2><span class="muted">Campaña <span id="campYear"></span></span></div>
+      <div class="impact" id="impact"></div>
+    </div>
+    <div class="card" style="margin-top:14px">
+      <div class="head"><h2>Riesgo de plagas y enfermedades</h2><span class="muted">Se recalcula con cada actualización del tiempo</span></div>
+      <div class="legend" style="margin-bottom:12px"><span>Barras: últimos 3 días · <b>hoy</b> · próximos 7 días</span></div>
+      <div class="pests" id="pests"></div>
+      <p class="note" style="margin-top:14px">Los índices son estimaciones a partir de modelos agrometeorológicos (tabla de Mills para moteado, integral térmica para carpocapsa y grafolita, humectación y temperatura para hongos). La humectación de hoja se estima con humedad ≥ 90 %, lluvia o punto de rocío. Contrasta siempre con las estaciones de avisos del Servei de Sanitat Vegetal (DACC) y con el seguimiento de trampas en tu finca.</p>
+    </div>
+  </section>
+
+  <!-- 5 · LUNA -->
+  <section class="panel" id="p-moon" role="tabpanel">
+    <div class="grid g2">
+      <div class="card"><div class="moonbig" id="moonToday"></div></div>
+      <div class="card"><div class="eyebrow" style="margin-bottom:8px">Próximas fases</div><div class="list" id="moonNext"></div></div>
+    </div>
+    <div class="card" style="margin-top:14px">
+      <div class="head">
+        <div class="cal-head"><button class="btn" id="calPrev" type="button" aria-label="Mes anterior">‹</button><h2 id="calTitle">Octubre 2026</h2><button class="btn" id="calNext" type="button" aria-label="Mes siguiente">›</button></div>
+        <div class="legend"><span class="hol h-nac">Nacional</span><span class="hol h-aut">Autonómico</span><span class="hol h-loc">Local</span></div>
+      </div>
+      <div class="cal" id="cal"></div>
+      <p class="note" id="holNote" style="margin-top:12px"></p>
+    </div>
+    <div class="grid g2" style="margin-top:14px">
+      <div class="card"><div class="eyebrow" style="margin-bottom:8px">Festivos del año</div><div class="list" id="holList"></div></div>
+      <div class="card"><div class="eyebrow" style="margin-bottom:8px">La luna en el campo (tradición popular)</div><div id="moonLore"></div></div>
+    </div>
+  </section>
+
+  <p class="foot" id="foot"></p>
+</div>
+
+<!-- Pantalla de entrada: elegir población -->
+<div class="ob" id="ob" role="dialog" aria-modal="true" aria-labelledby="obTitle">
+  <div class="ob-card">
+    <h1 id="obTitle">Meteo<span>Sanuy</span></h1>
+    <p class="ob-q">¿De qué población o ciudad quieres ver el tiempo?</p>
+    <form class="search" id="obForm" autocomplete="off">
+      <input id="obInput" type="text" placeholder="Escribe un pueblo o ciudad…" aria-label="Población">
+      <button class="btn pri" type="submit">Buscar</button>
+    </form>
+    <div class="sugg" id="obSugg"></div>
+    <div class="results" id="obResults"></div>
+    <div id="obMsg"></div>
+    <div class="loading" id="obLoad" hidden></div>
+  </div>
+</div>
+<div class="tip" id="tip" hidden></div>
+<div class="toast" id="toast" hidden></div>
+
+<script>
+(function(){
+"use strict";
+const $=s=>document.querySelector(s), $$=s=>[...document.querySelectorAll(s)];
+const css=n=>getComputedStyle(document.documentElement).getPropertyValue(n).trim();
+const C={fg:css('--fg'),muted:css('--muted'),line:'rgba(205,226,222,.12)',ochre:css('--ochre'),olive:css('--olive'),sky:css('--sky'),rain:css('--rain'),bad:css('--bad'),ok:css('--ok'),warn:css('--warn'),crit:css('--crit')};
+const fmt=(v,d=0)=>v==null||isNaN(v)?'–':Number(v).toLocaleString('es-ES',{minimumFractionDigits:d,maximumFractionDigits:d});
+const clamp=(x,a=0,b=1)=>Math.max(a,Math.min(b,x));
+const esc=s=>String(s).replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
+const DOW=['dom','lun','mar','mié','jue','vie','sáb'];
+const DOWL=['domingo','lunes','martes','miércoles','jueves','viernes','sábado'];
+const MON=['enero','febrero','marzo','abril','mayo','junio','julio','agosto','septiembre','octubre','noviembre','diciembre'];
+const MONS=['ene','feb','mar','abr','may','jun','jul','ago','sep','oct','nov','dic'];
+const store={get(k){try{return localStorage.getItem(k)}catch(e){return null}},set(k,v){try{localStorage.setItem(k,v)}catch(e){}}};
+
+/* ---------- fechas "naive" (hora local del lugar) ---------- */
+const P=s=>{const [d,t='00:00']=s.split('T');const [y,m,dd]=d.split('-').map(Number);const [h,mi]=t.split(':').map(Number);return Date.UTC(y,m-1,dd,h,mi)};
+const F=ms=>new Date(ms).toISOString().slice(0,16);
+const FD=ms=>new Date(ms).toISOString().slice(0,10);
+const addD=(d,n)=>FD(P(d)+n*864e5);
+const dObj=d=>new Date(P(d));
+const dLabel=d=>{const o=dObj(d);return DOW[o.getUTCDay()]+' '+o.getUTCDate()};
+const dLong=d=>{const o=dObj(d);return o.getUTCDate()+' '+MONS[o.getUTCMonth()]};
+const gen=(t0,n,step)=>{const s=P(t0.length>10?t0:t0+'T00:00');return Array.from({length:n},(_,i)=>step==='h'?F(s+i*36e5):FD(s+i*864e5))};
+
+/* ---------- códigos WMO ---------- */
+const WMO={0:'Despejado',1:'Casi despejado',2:'Parcialmente nuboso',3:'Cubierto',45:'Niebla',48:'Niebla con escarcha',51:'Llovizna débil',53:'Llovizna',55:'Llovizna intensa',56:'Llovizna helada',57:'Llovizna helada',61:'Lluvia débil',63:'Lluvia',65:'Lluvia fuerte',66:'Lluvia helada',67:'Lluvia helada',71:'Nieve débil',73:'Nieve',75:'Nieve fuerte',77:'Granizo menudo',80:'Chubascos débiles',81:'Chubascos',82:'Chubascos fuertes',85:'Chubascos de nieve',86:'Chubascos de nieve',95:'Tormenta',96:'Tormenta con granizo',99:'Tormenta con granizo'};
+function icon(code,day=true){
+  code=code??0;
+  const sun=`<g class="sunrays">${Array.from({length:8},(_,i)=>`<line x1="32" y1="8" x2="32" y2="13" stroke="#e9b949" stroke-width="3" stroke-linecap="round" transform="rotate(${i*45} 32 32)"/>`).join('')}</g><circle cx="32" cy="32" r="11" fill="#e9b949"/>`;
+  const moon=`<path d="M40 40a14 14 0 1 1-12-22 11 11 0 0 0 12 22z" fill="#dfe6ef"/>`;
+  const sm=(dx,dy,s)=>`<g transform="translate(${dx} ${dy}) scale(${s})">${day?sun:moon}</g>`;
+  const cloud=(fill='#eef3ef',o=1,dx=0,dy=0)=>`<path transform="translate(${dx} ${dy})" d="M18 50h28a10 10 0 0 0 1-20 13 13 0 0 0-25-3 9 9 0 0 0-4 23z" fill="${fill}" opacity="${o}"/>`;
+  const drops=(n,c='#5aa2ff')=>Array.from({length:n},(_,i)=>`<line class="drop" style="animation-delay:${i*.35}s" x1="${22+i*9}" y1="53" x2="${19+i*9}" y2="60" stroke="${c}" stroke-width="3" stroke-linecap="round"/>`).join('');
+  const flakes=n=>Array.from({length:n},(_,i)=>`<circle class="drop" style="animation-delay:${i*.4}s" cx="${22+i*9}" cy="56" r="2.4" fill="#fff"/>`).join('');
+  let b;
+  if(code===0) b=day?sun:`<g transform="translate(-2 -2)">${moon}</g>`;
+  else if(code===1) b=sm(-4,-4,.85)+cloud('#eef3ef',.7,8,6);
+  else if(code===2) b=sm(-8,-8,.8)+cloud();
+  else if(code===3) b=cloud('#aebdc0',1,-6,-6)+cloud('#d9e2e0');
+  else if(code<=48) b=cloud('#c3cfd0',1,0,-6)+`<g stroke="#c3cfd0" stroke-width="3" stroke-linecap="round"><line x1="12" y1="52" x2="52" y2="52"/><line x1="16" y1="58" x2="48" y2="58"/></g>`;
+  else if(code<=57) b=cloud('#d9e2e0',1,0,-4)+drops(3,'#86bde3');
+  else if(code<=67||(code>=80&&code<=82)) b=(code>=80?sm(-10,-12,.7):'')+cloud('#c8d3d3',1,0,-4)+drops(code===65||code===82?4:3);
+  else if(code<=77||code===85||code===86) b=cloud('#e3eaea',1,0,-4)+flakes(3);
+  else b=cloud('#8f9fa3',1,0,-6)+`<path d="M34 46l-7 10h6l-4 8 10-12h-6l4-6z" fill="#e9b949"/>`+(code>=96?flakes(2):'');
+  return `<svg viewBox="0 0 64 64" aria-hidden="true">${b}</svg>`;
+}
+
+/* ---------- estado ---------- */
+const S={tab:'prev',crop:store.get('ms_crop')||'manzano',histR:'30',calM:null,mcp:null,live:false,charts:{},nc:{t:8,timer:null}};
+const KNOWN=[
+  {name:'Castelldans',latitude:41.5,longitude:0.7667,admin1:'Cataluña',admin2:'Lleida',country:'España',country_code:'ES'},
+  {name:'Lleida',latitude:41.6176,longitude:0.62,admin1:'Cataluña',admin2:'Lleida',country:'España',country_code:'ES'},
+  {name:'Les Borges Blanques',latitude:41.5226,longitude:0.8686,admin1:'Cataluña',admin2:'Lleida',country:'España',country_code:'ES'},
+  {name:'Alcarràs',latitude:41.5638,longitude:0.5253,admin1:'Cataluña',admin2:'Lleida',country:'España',country_code:'ES'},
+  {name:'Mollerussa',latitude:41.6312,longitude:0.8951,admin1:'Cataluña',admin2:'Lleida',country:'España',country_code:'ES'},
+  {name:'Juneda',latitude:41.5487,longitude:0.8235,admin1:'Cataluña',admin2:'Lleida',country:'España',country_code:'ES'}
+];
+
+/* ---------- normalización de datos Open-Meteo ---------- */
+function build(meta,fc,ar,nowc,source){
+  const H=fc.hourly, nh=H.temperature_2m.length;
+  const ht=H.time||gen(H.time0,nh,'h');
+  const hours=ht.map((t,i)=>({t,d:t.slice(0,10),h:+t.slice(11,13),T:H.temperature_2m[i],RH:H.relative_humidity_2m[i],P:H.precipitation[i]||0,PP:H.precipitation_probability?H.precipitation_probability[i]:null,code:H.weather_code[i],W:H.wind_speed_10m[i],Td:H.dew_point_2m[i]})).filter(x=>x.T!=null);
+  const D=fc.daily, nd=D.temperature_2m_max.length, dt=D.time||gen(D.time0,nd,'d');
+  const hm=s=>s==null?null:(s.length>5?s.slice(11,16):s);
+  const fdays=dt.map((d,i)=>({d,code:D.weather_code[i],tmax:D.temperature_2m_max[i],tmin:D.temperature_2m_min[i],p:D.precipitation_sum[i],pp:D.precipitation_probability_max[i],w:D.wind_speed_10m_max[i],g:D.wind_gusts_10m_max[i],et0:D.et0_fao_evapotranspiration[i],sun:D.sunshine_duration[i]==null?null:(fc.sunMin?D.sunshine_duration[i]:D.sunshine_duration[i]/60),rise:hm(D.sunrise[i]),set:hm(D.sunset[i]),uv:D.uv_index_max[i],rh:D.relative_humidity_2m_mean?D.relative_humidity_2m_mean[i]:null}));
+  // serie diaria histórica: archivo + días pasados de la previsión
+  const hist=new Map();
+  if(ar){const A=ar.daily||ar, na=A.temperature_2m_max.length, at=A.time||gen(A.time0,na,'d');
+    at.forEach((d,i)=>{if(A.temperature_2m_max[i]!=null)hist.set(d,{d,tmax:A.temperature_2m_max[i],tmin:A.temperature_2m_min[i],p:A.precipitation_sum[i]??0,rh:A.relative_humidity_2m_mean?A.relative_humidity_2m_mean[i]:null})});}
+  const cur=fc.current, today=cur.time.slice(0,10);
+  fdays.forEach(x=>{if(x.tmax==null)return; if(x.d<=today && !hist.has(x.d))hist.set(x.d,{d:x.d,tmax:x.tmax,tmin:x.tmin,p:x.p??0,rh:x.rh,code:x.code,et0:x.et0}); else if(hist.has(x.d)){const h=hist.get(x.d);h.code=x.code;h.et0=x.et0}});
+  // hoy: usa el valor de la previsión (incluye la parte del día que falta)
+  const ft=fdays.find(x=>x.d===today); if(ft&&ft.tmax!=null)hist.set(today,{d:today,tmax:ft.tmax,tmin:ft.tmin,p:ft.p??0,rh:ft.rh,code:ft.code,et0:ft.et0});
+  const histArr=[...hist.values()].sort((a,b)=>a.d<b.d?-1:1);
+  let nc=null;
+  if(nowc){ if(Array.isArray(nowc)){nc={time0:nowc[0].minutely_15.time[0],pts:nowc.map(p=>[p.latitude,p.longitude,p.minutely_15.precipitation])}} else nc=nowc; }
+  return {meta,cur,today,hours,fdays,hist:histArr,histMap:hist,nc,lat:fc.latitude,lon:fc.longitude,elev:fc.elevation,source,fetched:meta.fetched,arRaw:ar};
+}
+
+/* ---------- datos por día (con horas si existen) ---------- */
+function dayFeatures(W){
+  const byDay=new Map();
+  W.hours.forEach(h=>{if(!byDay.has(h.d))byDay.set(h.d,[]);byDay.get(h.d).push(h)});
+  const feats=new Map();
+  const isWet=h=>h.P>=0.1||h.RH>=90||(h.Td!=null&&h.T-h.Td<=1.5);
+  const days=new Set([...W.hist.map(x=>x.d),...W.fdays.filter(x=>x.tmax!=null).map(x=>x.d)]);
+  [...days].sort().forEach(d=>{
+    const hs=byDay.get(d), dd=W.fdays.find(x=>x.d===d)||W.histMap.get(d)||{};
+    const hd=W.histMap.get(d)||dd;
+    let f;
+    if(hs&&hs.length>=20){
+      const T=hs.map(h=>h.T); let run=0,best=0,bestT=0,acc=[],cur=[];
+      hs.forEach(h=>{if(isWet(h)){cur.push(h.T)}else{if(cur.length>best){best=cur.length;bestT=cur.reduce((a,b)=>a+b,0)/cur.length}cur=[]}});
+      if(cur.length>best){best=cur.length;bestT=cur.reduce((a,b)=>a+b,0)/cur.length}
+      const wet=hs.filter(isWet);
+      f={d,hourly:true,tmax:Math.max(...T),tmin:Math.min(...T),tmean:T.reduce((a,b)=>a+b,0)/T.length,rain:hs.reduce((a,h)=>a+h.P,0),rh:hs.reduce((a,h)=>a+h.RH,0)/hs.length,
+        wet:wet.length,wetT:wet.length?wet.reduce((a,h)=>a+h.T,0)/wet.length:null,run:best,runT:best?bestT:null,
+        dusk:(()=>{const x=hs.filter(h=>h.h>=19&&h.h<=22);return x.length?x.reduce((a,h)=>a+h.T,0)/x.length:null})(),
+        wind:Math.max(...hs.map(h=>h.W)),code:dd.code,h1925:hs.filter(h=>h.T>=19&&h.T<=26).length,chill:hs.filter(h=>h.T>=0&&h.T<=7.2).length};
+    }else{
+      const tmax=hd.tmax,tmin=hd.tmin; if(tmax==null)return;
+      const rain=hd.p||0, rh=hd.rh??60, tmean=(tmax+tmin)/2;
+      const wetEst=rain>=0.2?Math.min(22,5+rain*1.2):(rh>=85?9:rh>=75?4:0);
+      f={d,hourly:false,tmax,tmin,tmean,rain,rh,wet:Math.round(wetEst),wetT:tmean-2,run:Math.round(wetEst),runT:tmean-2,dusk:tmin+.62*(tmax-tmin),wind:dd.w??10,code:hd.code??dd.code,
+        h1925:Math.round(24*clamp((Math.min(tmax,26)-Math.max(tmin,19))/Math.max(1,tmax-tmin))),chill:sineChill(tmin,tmax)};
+    }
+    feats.set(d,f);
+  });
+  return feats;
+}
+function sineChill(tmin,tmax){let c=0;for(let h=0;h<24;h++){const T=tmin+(tmax-tmin)*(0.5-0.5*Math.cos(Math.PI*((h-5+24)%24)/12));if(T>=0&&T<=7.2)c++}return c}
+
+/* ---------- grados-día ---------- */
+function gdd(W,from,base,upper=31,to){
+  let s=0; const out=[];
+  W.hist.concat(W.fdays.filter(x=>x.d>W.today&&x.tmax!=null)).forEach(x=>{
+    if(x.d<from||(to&&x.d>to))return;
+    const tx=Math.min(x.tmax,upper), tn=Math.min(x.tmin,upper);
+    const v=Math.max(0,(tx+tn)/2-base); s+=v; out.push([x.d,s]);
+  });
+  return {total:s,series:out};
+}
+
+/* ---------- modelos de plagas ---------- */
+const MILLS={1:41,2:35,3:30,4:28,5:21,6:18,7:15,8:13,9:12,10:11,11:9,12:9,13:9,14:9,15:9,16:9,17:9,18:9,19:9,20:9,21:9,22:9,23:11,24:12,25:14,26:17};
+const millsNeed=T=>{if(T==null||T<1)return 99;const k=Math.round(T);return MILLS[k]||(k>26?24:41)};
+const tf=(T,a,b,c,d)=>T==null?0:T<=a||T>=d?0:T<b?(T-a)/(b-a):T<=c?1:(d-T)/(d-c);
+const CROPS=[
+  {id:'manzano',name:'Manzano',color:'#d94a3a'},
+  {id:'peral',name:'Peral',color:'#b9c94a'},
+  {id:'melocotonero',name:'Melocotonero',color:'#f39a4c'},
+  {id:'cerezo',name:'Cerezo',color:'#b3203a'},
+  {id:'almendro',name:'Almendro',color:'#d8c3a0'},
+  {id:'olivo',name:'Olivo',color:'#6f8a3a'}
+];
+function cropIcon(id){
+  const c=CROPS.find(x=>x.id===id)?.color||'#ccc';
+  const leaf='<path d="M33 16c4-6 11-7 15-5-2 6-8 9-15 5z" fill="#6fae4f"/>';
+  if(id==='peral')return `<svg viewBox="0 0 64 64"><path d="M32 18c-5 0-6 6-6 10 0 4-8 8-8 17a14 14 0 0 0 28 0c0-9-8-13-8-17 0-4-1-10-6-10z" fill="${c}"/><path d="M32 18v-6" stroke="#6b4a2a" stroke-width="3"/>${leaf}</svg>`;
+  if(id==='cerezo')return `<svg viewBox="0 0 64 64"><path d="M38 10c-6 10-14 18-18 28M38 10c0 12 4 20 8 26" stroke="#5d7a2a" stroke-width="2.5" fill="none"/><circle cx="20" cy="44" r="9" fill="${c}"/><circle cx="44" cy="42" r="9" fill="${c}"/></svg>`;
+  if(id==='almendro')return `<svg viewBox="0 0 64 64"><path d="M32 10c12 8 14 26 0 44C18 36 20 18 32 10z" fill="${c}"/><path d="M32 16v34" stroke="#a88a5c" stroke-width="2"/></svg>`;
+  if(id==='olivo')return `<svg viewBox="0 0 64 64"><ellipse cx="30" cy="38" rx="11" ry="14" fill="#3d4a24" transform="rotate(-15 30 38)"/><ellipse cx="42" cy="30" rx="8" ry="11" fill="${c}" transform="rotate(20 42 30)"/><path d="M14 18c10-2 22 2 30 10" stroke="#7a8c4a" stroke-width="2.5" fill="none"/></svg>`;
+  if(id==='melocotonero')return `<svg viewBox="0 0 64 64"><circle cx="32" cy="38" r="17" fill="${c}"/><path d="M32 22c-3 6-3 24 0 32" stroke="#d9703a" stroke-width="2" fill="none"/><circle cx="26" cy="32" r="6" fill="#ffc07a" opacity=".6"/>${leaf}</svg>`;
+  return `<svg viewBox="0 0 64 64"><path d="M32 20c-4-3-16-4-16 12 0 12 8 22 16 20 8 2 16-8 16-20 0-16-12-15-16-12z" fill="${c}"/><path d="M32 20v-7" stroke="#6b4a2a" stroke-width="3"/>${leaf}</svg>`;
+}
+/* Cada modelo devuelve {s:0-100, why} para un día; "season" pondera por mes (fenología en el valle del Segre). */
+const PESTS=[
+ {id:'moteado',name:'Moteado del manzano',sci:'Venturia inaequalis',type:'Hongo',crops:['manzano'],
+  season:[.1,.4,.9,1,1,.8,.4,.3,.4,.4,.2,.1],
+  f:(x)=>{const need=millsNeed(x.runT),r=x.run/need;const s=r>=2.2?95:r>=1.5?80:r>=1?62:r>=.7?35:r>=.4?15:2;return{s,why:x.run?`${x.run} h de hoja mojada a ${fmt(x.runT,1)} °C (Mills pide ${need} h)`:'Sin periodos de humectación'}},
+  cond:'Lluvia o rocío que mantiene la hoja mojada el tiempo que marca la tabla de Mills: unas 9 h entre 11 y 22 °C, más horas con frío. Las ascosporas maduran de marzo a junio.',
+  sym:'Manchas oliváceas aterciopeladas en hojas, frutos con costras negras y agrietados, caída prematura.',
+  ctl:['Seguir los avisos de proyección de ascosporas y tratar preventivo antes de la lluvia','Si la infección ya ha empezado, curativo dentro de las 48–72 h','En otoño, triturar la hojarasca o aplicar urea al 5 % para reducir el inóculo']},
+ {id:'moteado_p',name:'Moteado del peral',sci:'Venturia pirina',type:'Hongo',crops:['peral'],
+  season:[.1,.4,.9,1,1,.8,.4,.3,.4,.4,.2,.1],
+  f:(x)=>{const need=millsNeed(x.runT)+2,r=x.run/need;const s=r>=2?92:r>=1.4?78:r>=1?60:r>=.7?32:r>=.4?14:2;return{s,why:x.run?`${x.run} h de humectación a ${fmt(x.runT,1)} °C`:'Sin periodos de humectación'}},
+  cond:'Igual que en manzano pero algo más exigente en horas de hoja mojada. Ramos jóvenes y frutos pequeños son muy sensibles.',
+  sym:'Manchas negras en frutos y hojas, chancros en ramos de un año.',
+  ctl:['Tratamientos preventivos en primavera antes de lluvias','Poda que airee la copa','Eliminar ramos con chancros en invierno']},
+ {id:'fuego',name:'Fuego bacteriano',sci:'Erwinia amylovora',type:'Bacteria',crops:['peral','manzano'],
+  season:[0,.05,.5,1,1,.8,.6,.5,.4,.2,.05,0],
+  f:(x)=>{if(x.tmax<18.3)return{s:3,why:`Máxima de ${fmt(x.tmax,1)} °C, por debajo de 18 °C`};let s=(x.tmean>=15.6?30:15)+(x.rain>=.25?35:x.wet>=4?20:0)+(x.tmax>=24?25:10)+(x.tmax>=29?10:0);return{s:Math.min(100,s),why:`Máx. ${fmt(x.tmax,1)} °C${x.rain>=.25?`, ${fmt(x.rain,1)} mm de lluvia`:x.wet>=4?', rocío':''}`}},
+  cond:'Calor (más de 18 °C, sobre todo 24–29 °C) con lluvia o rocío durante la floración. Granizo y tormentas de verano abren heridas que facilitan infecciones en brotes.',
+  sym:'Flores y brotes que se secan y quedan negros, brotes en forma de cayado, exudado bacteriano.',
+  ctl:['Revisar la parcela tras tormentas y granizo','Cortar ramos afectados 40–50 cm por debajo del síntoma y desinfectar las tijeras','Es plaga de cuarentena: comunicar los focos a Sanitat Vegetal']},
+ {id:'stemphylium',name:'Estemfiliosis',sci:'Stemphylium vesicarium',type:'Hongo',crops:['peral'],
+  season:[0,0,.2,.6,1,1,1,1,.9,.5,.1,0],
+  f:(x)=>{const s=Math.round(clamp((x.wet-3)/12)*100*Math.max(.3,tf(x.wetT,8,18,26,32)));return{s,why:`${x.wet} h de humectación a ${fmt(x.wetT,1)} °C`}},
+  cond:'Mojadura larga de hoja y fruto (rocíos, riegos por aspersión, lluvias) con 15–28 °C. Es la enfermedad clave del peral Conference en Lleida.',
+  sym:'Manchas necróticas pardas en hojas y frutos, que se pudren en la zona afectada.',
+  ctl:['Tratar según el modelo BSPcast de los avisos','Retirar la hierba seca de las calles, donde se forma el inóculo','Evitar riegos que mojen la copa al atardecer']},
+ {id:'monilia',name:'Moniliosis (podredumbre)',sci:'Monilinia laxa · M. fructicola',type:'Hongo',crops:['melocotonero','cerezo','almendro'],
+  season:[.1,.6,1,.9,.7,.8,.8,.8,.7,.3,.15,.1],
+  f:(x)=>{const s=Math.round(clamp(x.wet/10)*85*Math.max(.2,tf(x.wetT,5,15,25,32))+(x.rain>=2?15:0));return{s:Math.min(100,s),why:`${x.wet} h húmedas a ${fmt(x.wetT,1)} °C${x.rain>=2?`, ${fmt(x.rain,1)} mm`:''}`}},
+  cond:'Lluvias en floración (seca flores y ramillas) y lluvias o humedad alta con 20–25 °C en las semanas antes de la cosecha.',
+  sym:'Flores y brotes secos con goma, frutos podridos con esporas grises o pardas en anillos; frutos momificados.',
+  ctl:['Retirar momias y ramas secas en la poda','Proteger floración si se anuncia lluvia','Cuidar los daños de insectos y granizo, que abren entrada al hongo']},
+ {id:'lepra',name:'Lepra o abolladura',sci:'Taphrina deformans',type:'Hongo',crops:['melocotonero','almendro'],
+  season:[.7,1,1,.5,.1,0,0,0,0,.3,.6,.6],
+  f:(x)=>{if(x.tmax>22)return{s:5,why:'Temperaturas altas para el hongo'};let s=x.rain>=1&&x.wet>=12&&x.wetT>=5&&x.wetT<=17?85:x.wet>=6&&x.tmean<18?55:x.rain>0?30:5;return{s,why:`${fmt(x.rain,1)} mm y ${x.wet} h húmedas a ${fmt(x.wetT,1)} °C`}},
+  cond:'Lluvias frescas (7–16 °C) desde el hinchado de yemas hasta la salida de hojas. En otoño se hace el tratamiento a la caída de la hoja.',
+  sym:'Hojas abolladas, gruesas y rojizas que acaban cayendo; debilita el árbol.',
+  ctl:['Tratamiento cúprico a la caída del 50–75 % de la hoja (octubre–noviembre)','Segundo tratamiento en yema hinchada, antes de que se vea el verde','No sirve tratar con la hoja ya deformada']},
+ {id:'oidio',name:'Oídio',sci:'Podosphaera leucotricha · P. pannosa',type:'Hongo',crops:['manzano','melocotonero'],
+  season:[0,0,.3,.9,1,1,.8,.6,.5,.2,0,0],
+  f:(x)=>{let s=clamp(x.h1925/8)*75+(x.rh>=55&&x.rh<=90?20:0);if(x.rain>2)s*=.4;return{s:Math.round(s),why:`${x.h1925} h entre 19 y 26 °C, humedad ${fmt(x.rh)} %`}},
+  cond:'Días templados (19–25 °C) con humedad relativa alta pero sin lluvia; la lluvia lava las esporas.',
+  sym:'Polvillo blanco en brotes y hojas, frutos con russeting o manchas blancas en melocotón.',
+  ctl:['Eliminar brotes oidiados en la poda de invierno y en primavera','Tratamientos preventivos desde botón rosa en variedades sensibles','Azufre cuando la temperatura no supera los 30 °C']},
+ {id:'pseudo',name:'Cáncer bacteriano',sci:'Pseudomonas syringae',type:'Bacteria',crops:['cerezo','peral','melocotonero'],
+  season:[.8,.8,.6,.3,.1,0,0,0,.2,.8,1,.9],
+  f:(x)=>{const s=x.tmin<=0&&x.wet>=4?85:x.rain>=2&&x.tmin<=10?62:x.rain>=.5?32:x.tmin<=2?28:6;return{s,why:`Mín. ${fmt(x.tmin,1)} °C, ${fmt(x.rain,1)} mm`}},
+  cond:'Lluvias en la caída de la hoja y heladas sobre tejido mojado; las cicatrices foliares son la puerta de entrada.',
+  sym:'Chancros con goma en tronco y ramas, yemas que no brotan, manchas en hojas y frutos.',
+  ctl:['Cobre en la caída de la hoja y al inicio de brotación','Podar con tiempo seco y desinfectar herramientas','Evitar excesos de nitrógeno en otoño']},
+ {id:'repilo',name:'Repilo',sci:'Venturia oleaginea',type:'Hongo',crops:['olivo'],
+  season:[.6,.7,.9,1,.8,.3,.1,.1,.5,1,1,.8],
+  f:(x)=>{if(x.tmax>30)return{s:3,why:'Calor que frena el hongo'};const t=tf(x.wetT,4,12,18,25);const s=x.wet>=12?Math.round(55+40*t):x.wet>=6?Math.round(30+30*t):x.rain>=.5?25:5;return{s,why:`${x.wet} h de hoja mojada a ${fmt(x.wetT,1)} °C`}},
+  cond:'Lluvias de otoño y primavera con temperaturas suaves (12–18 °C) y la hoja mojada muchas horas. Plantaciones densas y zonas bajas sufren más.',
+  sym:'Manchas circulares oscuras en el haz con halo amarillo ("ojo de pavo real"), defoliación.',
+  ctl:['Tratamiento cúprico antes de las lluvias de otoño (octubre–noviembre) y en primavera','Poda que airee la copa','Revisar hojas bajas con la prueba de la sosa para ver infecciones latentes']},
+ {id:'mosca_olivo',name:'Mosca del olivo',sci:'Bactrocera oleae',type:'Insecto',crops:['olivo'],
+  season:[.1,.05,.05,.05,.1,.3,.5,.7,1,1,.8,.3],
+  f:(x)=>{const s=x.tmax>35?10:x.tmax>=30?45:x.tmax>=20&&x.rh>=50?88:x.tmax>=20?65:x.tmean>=14?45:x.tmax<12?5:20;return{s,why:`Máx. ${fmt(x.tmax,1)} °C, humedad ${fmt(x.rh)} %`}},
+  cond:'Temperaturas suaves (20–30 °C) y humedad, típicas de septiembre a noviembre. El calor fuerte del verano frena la puesta; se dispara con las primeras lluvias de otoño.',
+  sym:'Picadas en la aceituna, galerías de la larva, caída del fruto y acidez alta del aceite.',
+  ctl:['Contar capturas en mosqueros y trampas cromotrópicas cada semana','Tratamiento parcheo con cebo proteico cuando se supera el umbral','Adelantar la cosecha si hay mucha picada']},
+ {id:'ceratitis',name:'Mosca de la fruta',sci:'Ceratitis capitata',type:'Insecto',crops:['melocotonero','manzano','peral'],
+  season:[.05,.05,.05,.1,.2,.5,.9,1,1,.9,.4,.1],
+  f:(x)=>{const s=x.tmean>=22?90:x.tmean>=18?68:x.tmean>=15?42:x.tmean>=12?16:3;return{s,why:`Temperatura media ${fmt(x.tmean,1)} °C`}},
+  cond:'Calor (media diaria por encima de 18–20 °C). En Lleida las poblaciones crecen de julio a octubre y afectan a las variedades tardías.',
+  sym:'Picadas con halo en la piel, pulpa blanda y podrida con larvas.',
+  ctl:['Mosqueros con atrayente desde julio','Trampeo masivo o atracción y muerte en parcelas con historial','Recoger fruta caída y no dejar destrío en el campo']},
+ {id:'suzukii',name:'Drosophila de alas manchadas',sci:'Drosophila suzukii',type:'Insecto',crops:['cerezo'],
+  season:[.1,.1,.2,.5,1,1,.7,.7,.9,.8,.4,.15],
+  f:(x)=>{const s=x.tmax>30?22:x.tmean>=15&&x.tmean<=25&&x.rh>=60?86:x.tmean>=15&&x.tmean<=25?62:x.tmean>=10?38:8;return{s,why:`Media ${fmt(x.tmean,1)} °C, humedad ${fmt(x.rh)} %`}},
+  cond:'Temperaturas suaves (15–25 °C) y ambiente húmedo. El calor seco de más de 30 °C la frena.',
+  sym:'Pequeñas heridas en frutos maduros, larvas dentro de cerezas sanas en apariencia.',
+  ctl:['Trampas con vinagre de manzana y vino para seguir el vuelo','Cosechar sin retrasos y no dejar fruta sobremadura','Mallas antinsectos en parcelas de alto valor']},
+ {id:'carpocapsa',name:'Carpocapsa',sci:'Cydia pomonella',type:'Insecto',crops:['manzano','peral'],gdd:{base:10,from:'03-01',gens:[[250,550],[850,1150],[1450,1750]]},
+  season:[0,0,.1,.6,1,1,1,1,.7,.2,0,0],
+  f:(x,ctx)=>{const g=ctx.gddAt(x.d,10);const W=PESTS_BYID.carpocapsa.gdd.gens;let p=.25,phase='entre generaciones';W.forEach((w,i)=>{if(g>=w[0]&&g<=w[1]){p=1;phase=`eclosión de huevos ${i+1}ª generación`}else if(g>=w[0]-120&&g<w[0]&&p<1){p=.6;phase=`inicio ${i+1}ª generación`}});const a=x.dusk>=15?1:x.dusk>=12?.45:.1;const m=+x.d.slice(5,7),dd=+x.d.slice(8,10);if(m>9||(m===9&&dd>15)){p*=.35;phase='diapausa (días cortos)'}return{s:Math.round(100*a*p),why:`${fmt(g)} grados-día (base 10 °C): ${phase}; ${fmt(x.dusk,1)} °C al anochecer`}},
+  cond:'Vuela y pone huevos cuando al anochecer hay más de 15 °C. Cada generación necesita unos 550–600 grados-día; en el valle del Ebro hace 2–3 generaciones.',
+  sym:'Galerías hasta las semillas con serrín en la entrada; frutos caídos.',
+  ctl:['Confusión sexual con difusores colocados antes del primer vuelo','Seguir capturas en trampas de feromona y los avisos de eclosión','Granulovirus o insecticidas en eclosión según grados-día']},
+ {id:'grafolita',name:'Grafolita',sci:'Grapholita molesta',type:'Insecto',crops:['melocotonero','peral','manzano'],
+  season:[0,0,.4,1,1,1,1,1,.7,.2,0,0],
+  f:(x,ctx)=>{const g=ctx.gddAt(x.d,7.2);const pos=((g-160)%510+510)%510;const gen=Math.max(1,Math.floor((g-160)/510)+1);let p=g<120?.1:(pos>=250&&pos<=430?1:.45);const a=x.dusk>=15?1:x.dusk>=12?.5:.1;const m=+x.d.slice(5,7);if(m>=10)p*=.3;return{s:Math.round(100*a*p),why:`${fmt(g)} grados-día (base 7,2 °C), ${gen}ª generación${p>=1?' en eclosión':''}`}},
+  cond:'Necesita unos 500 grados-día (base 7,2 °C) por generación; hace 4–5 generaciones al año. Activa con atardeceres templados.',
+  sym:'Brotes tiernos que se secan desde la punta (melocotonero) y galerías en frutos, a menudo junto al pedúnculo.',
+  ctl:['Confusión sexual de toda la parcela','Revisar brotes terminales y frutos en las eclosiones','Coordinar el tratamiento con los avisos de grados-día']},
+ {id:'psila',name:'Psila del peral',sci:'Cacopsylla pyri',type:'Insecto',crops:['peral'],
+  season:[.5,.7,.8,1,1,1,1,.9,.7,.3,.2,.3],
+  f:(x)=>{const m=+x.d.slice(5,7);let s;if(m<=3)s=x.tmax>=10?(x.tmax>=15?78:58):12;else s=x.tmax>35?38:x.tmax>=20&&x.rh<75?82:x.tmax>=15?52:18;return{s,why:m<=3?`Máx. ${fmt(x.tmax,1)} °C: ${x.tmax>=10?'puesta de las formas invernantes':'poca actividad'}`:`Máx. ${fmt(x.tmax,1)} °C, humedad ${fmt(x.rh)} %`}},
+  cond:'Los adultos invernantes ponen en días de más de 10 °C a finales de invierno. En verano, el calor seco acelera las generaciones.',
+  sym:'Melaza pegajosa y negrilla en hojas y frutos, debilidad del árbol.',
+  ctl:['Proteger a los depredadores (antocóridos) evitando insecticidas de amplio espectro','Caolín en la puesta invernal','Lavados de melaza en verano']},
+ {id:'pulgon',name:'Pulgones',sci:'Dysaphis plantaginea · Myzus persicae',type:'Insecto',crops:['manzano','melocotonero','almendro','cerezo'],
+  season:[.1,.4,.9,1,1,.7,.3,.2,.3,.6,.5,.1],
+  f:(x)=>{let s=x.tmean>=12&&x.tmean<=25&&x.wind<20?75:x.tmean>=8&&x.tmean<12?40:x.tmax>30?22:30;if(x.rain>=10)s*=.5;return{s:Math.round(s),why:`Media ${fmt(x.tmean,1)} °C, viento máx. ${fmt(x.wind)} km/h`}},
+  cond:'Primaveras templadas y sin viento. En otoño los alados vuelven a los frutales a poner los huevos de invierno.',
+  sym:'Hojas enrolladas, brotes deformados, melaza y frutos pequeños y deformes (pulgón ceniciento).',
+  ctl:['Vigilar focos en botón rosa y caída de pétalos','Respetar mariquitas, sírfidos y crisopas','En otoño, valorar el tratamiento contra el vuelo de retorno en parcelas con historial']},
+ {id:'arana',name:'Araña roja',sci:'Panonychus ulmi · Tetranychus urticae',type:'Ácaro',crops:['manzano','peral','melocotonero','almendro'],
+  season:[0,0,.1,.3,.6,1,1,1,.7,.3,0,0],
+  f:(x)=>{const s=x.tmax>=30&&x.rh<50?90:x.tmax>=27&&x.rh<60?65:x.tmax>=24?35:8;return{s,why:`Máx. ${fmt(x.tmax,1)} °C, humedad ${fmt(x.rh)} %`}},
+  cond:'Calor seco (más de 30 °C y poca humedad) y polvo en los caminos. Las poblaciones se multiplican en pocos días.',
+  sym:'Hojas bronceadas o con punteado amarillo, telarañas finas, caída de hojas en verano.',
+  ctl:['Muestrear 100 hojas por parcela y contar hojas ocupadas','Favorecer fitoseidos con cubierta vegetal','Acaricida solo si se supera el umbral']}
+];
+const PESTS_BYID=Object.fromEntries(PESTS.map(p=>[p.id,p]));
+const level=s=>s<20?0:s<45?1:s<70?2:3;
+const LVL=['Bajo','Moderado','Alto','Muy alto'];
+const LCOL=[C.ok,C.warn,C.bad,'#ff6b70'];
+const riskCol=s=>{const l=level(s);return ['#6fcf97','#f2b53a','#f07a3d','#e5484d'][l]};
+
+/* ---------- vista ---------- */
+let W=null,FEATS=null;
+function setWorld(w){
+  W=w; FEATS=dayFeatures(W);
+  // grados-día acumulados por fecha
+  const yr=W.today.slice(0,4);
+  const g10=gdd(W,yr+'-03-01',10), g7=gdd(W,yr+'-03-01',7.2);
+  const m10=new Map(g10.series), m7=new Map(g7.series);
+  W.gddAt=(d,b)=>(b===10?m10:m7).get(d)??0; W.g10=g10; W.g7=g7;
+  renderAll();
+}
+function renderAll(){
+  renderHeader(); renderForecast(); if(S.tab==='hist')renderHistory(); else S.histDirty=true;
+  renderRadarStatic(); renderNowcast(); renderCrops(); renderMoon();
+  $('#foot').innerHTML=`Datos meteorológicos: <a href="https://open-meteo.com" target="_blank" rel="noopener">Open-Meteo</a> (modelos de AEMET, Météo-France y ECMWF; reanálisis ERA5 para el historial). Radar: RainViewer. Mapa: © OpenStreetMap, © CARTO. Foto de fondo: «Castelldans – Panoràmica des de l'ermita», Ramon Flix Pere, <a href="https://commons.wikimedia.org/wiki/File:Castelldans_-_Panor%C3%A0mica_des_de_l%27ermita_-2015.03.28_-_CASTELLDANS_-_103.jpg" target="_blank" rel="noopener">Wikimedia Commons</a>, CC BY-SA 4.0. Las estimaciones de plagas son orientativas.`;
+}
+function placeSub(m){return [m.comarca||m.admin3,m.admin2,m.admin1&&m.admin1!==m.admin2?m.admin1:null,m.country_code!=='ES'?m.country:null].filter(Boolean).filter((v,i,a)=>a.indexOf(v)===i).slice(0,3).join(' · ')}
+function renderHeader(){
+  const m=W.meta,c=W.cur;
+  $('#placeChip').textContent=m.name;
+  $('#heroPlace').innerHTML=`${esc(m.name)}<small>${esc(placeSub(m))} · ${fmt(W.elev)} m</small>`;
+  const live=W.source==='live';
+  $('#statusDot').className='dot '+(live?'live':'saved');
+  const ft=W.fetched||c.time;
+  $('#statusTxt').textContent=(live?'En directo · ':'Datos guardados · ')+dLong(ft.slice(0,10))+' '+ft.slice(11,16);
+  $('#heroEyebrow').textContent=`Ahora · ${DOWL[dObj(c.time).getUTCDay()]} ${dLong(c.time.slice(0,10))}, ${c.time.slice(11,16)} h`;
+  $('#nowIcon').innerHTML=icon(c.weather_code,!!c.is_day);
+  $('#nowT').innerHTML=`${fmt(c.temperature_2m)}<sup>°C</sup>`;
+  $('#nowDesc').textContent=WMO[c.weather_code]||'';
+  const td=W.fdays.find(x=>x.d===W.today)||{};
+  $('#nowFeel').textContent=`Sensación ${fmt(c.apparent_temperature)}° · máx. ${fmt(td.tmax)}° · mín. ${fmt(td.tmin)}°`;
+  const minis=[['Humedad',fmt(c.relative_humidity_2m)+' %'],['Viento',fmt(c.wind_speed_10m)+' km/h '+compassDir(c.wind_direction_10m)],['Rachas',fmt(c.wind_gusts_10m)+' km/h'],['Presión',fmt(c.pressure_msl)+' hPa'],['Lluvia hoy',fmt(td.p,1)+' mm'],['Prob. lluvia',fmt(td.pp)+' %']];
+  $('#heroMinis').innerHTML=minis.map(([l,v])=>`<div class="mini"><div class="l">${l}</div><div class="v">${v}</div></div>`).join('');
+}
+const DIRS=['N','NE','E','SE','S','SO','O','NO'];
+const compassDir=deg=>deg==null?'':DIRS[Math.round(deg/45)%8];
+
+/* --- previsión --- */
+function hIndexNow(){const k=W.cur.time.slice(0,13)+':00';let i=W.hours.findIndex(h=>h.t===k);if(i<0)i=W.hours.findIndex(h=>h.t>k);return Math.max(0,i)}
+function renderForecast(){
+  const c=W.cur, td=W.fdays.find(x=>x.d===W.today)||{};
+  // widgets
+  const wd=c.wind_direction_10m||0;
+  const compass=`<svg viewBox="0 0 120 120" width="120" height="120"><circle cx="60" cy="60" r="52" fill="none" stroke="${C.line}" stroke-width="2"/>${DIRS.map((d,i)=>{const a=i*45*Math.PI/180;return `<text x="${60+42*Math.sin(a)}" y="${64-42*Math.cos(a)}" text-anchor="middle" font-size="${i%2?8:11}" fill="${i%2?C.muted:C.fg}" font-family="Figtree">${d}</text>`}).join('')}<g transform="rotate(${wd+180} 60 60)"><path d="M60 22l7 38h-14z" fill="${C.ochre}"/><path d="M60 98l-5-38h10z" fill="${C.muted}" opacity=".6"/></g><circle cx="60" cy="60" r="4" fill="${C.fg}"/></svg>`;
+  const hum=c.relative_humidity_2m||0, R=44, L=2*Math.PI*R;
+  const ring=`<svg viewBox="0 0 120 120" width="120" height="120"><circle cx="60" cy="60" r="${R}" fill="none" stroke="rgba(255,255,255,.08)" stroke-width="10"/><circle cx="60" cy="60" r="${R}" fill="none" stroke="${C.sky}" stroke-width="10" stroke-linecap="round" stroke-dasharray="${L*hum/100} ${L}" transform="rotate(-90 60 60)"/><text x="60" y="62" text-anchor="middle" font-size="22" fill="${C.fg}" font-family="IBM Plex Mono">${fmt(hum)}%</text><text x="60" y="80" text-anchor="middle" font-size="9" fill="${C.muted}" font-family="Figtree">rocío ${fmt(W.hours[hIndexNow()]?.Td,1)}°</text></svg>`;
+  // arco solar
+  const toMin=s=>s?(+s.slice(0,2))*60+(+s.slice(3,5)):null;
+  const r0=toMin(td.rise),s0=toMin(td.set),nm=toMin(c.time.slice(11,16));
+  const fr=r0&&s0?clamp((nm-r0)/(s0-r0)):0, ang=Math.PI*(1-fr);
+  const sx=60+46*Math.cos(ang), sy=78-46*Math.sin(ang);
+  const daylen=r0&&s0?s0-r0:0;
+  const sunArc=`<svg viewBox="0 0 120 100" width="140" height="116"><path d="M14 78a46 46 0 0 1 92 0" fill="none" stroke="${C.line}" stroke-width="2" stroke-dasharray="3 4"/><path d="M14 78a46 46 0 0 1 ${46-46*Math.cos(Math.PI*fr)} ${-46*Math.sin(Math.PI*fr)}" fill="none" stroke="${C.ochre}" stroke-width="3"/><line x1="6" y1="78" x2="114" y2="78" stroke="${C.line}"/>${fr>0&&fr<1?`<circle cx="${sx}" cy="${sy}" r="7" fill="${C.ochre}"/>`:''}<text x="14" y="94" text-anchor="middle" font-size="10" fill="${C.muted}" font-family="IBM Plex Mono">${td.rise||''}</text><text x="106" y="94" text-anchor="middle" font-size="10" fill="${C.muted}" font-family="IBM Plex Mono">${td.set||''}</text></svg>`;
+  const uv=td.uv??0, uvc=uv<3?C.ok:uv<6?C.warn:uv<8?C.bad:C.crit;
+  const uvBar=`<svg viewBox="0 0 140 70" width="150" height="76"><defs><linearGradient id="uvg"><stop offset="0" stop-color="#6fcf97"/><stop offset=".35" stop-color="#f2b53a"/><stop offset=".65" stop-color="#f07a3d"/><stop offset="1" stop-color="#b15bd6"/></linearGradient></defs><rect x="10" y="40" width="120" height="8" rx="4" fill="url(#uvg)"/><circle cx="${10+120*clamp(uv/11)}" cy="44" r="7" fill="${C.fg}" stroke="#0d1619" stroke-width="2"/><text x="70" y="28" text-anchor="middle" font-size="22" fill="${uvc}" font-family="IBM Plex Mono">${fmt(uv,1)}</text><text x="70" y="66" text-anchor="middle" font-size="9" fill="${C.muted}" font-family="Figtree">${uv<3?'Bajo':uv<6?'Moderado':uv<8?'Alto':'Muy alto'}</text></svg>`;
+  $('#fcWidgets').innerHTML=[
+    ['Viento',compass,`${fmt(c.wind_speed_10m)} km/h del ${compassDir(c.wind_direction_10m)} · rachas ${fmt(c.wind_gusts_10m)}`],
+    ['Humedad',ring,`Media del día ${fmt(td.rh)} %`],
+    ['Sol',sunArc,`${Math.floor(daylen/60)} h ${daylen%60} min de luz · ${fmt((td.sun||0)/60,1)} h de sol previstas`],
+    ['Índice UV máximo',uvBar,`Evapotranspiración ${fmt(td.et0,1)} mm`]
+  ].map(([t,svg,s])=>`<div class="card wbox"><div class="eyebrow">${t}</div>${svg}<div class="muted" style="font-size:.85rem">${s}</div></div>`).join('');
+  // 48 h
+  const i0=hIndexNow(), hs=W.hours.slice(i0,i0+48);
+  $('#h48sub').textContent=`desde las ${hs[0]?.t.slice(11,16)||''} h`;
+  $('#hoursStrip').innerHTML=hs.map((h,i)=>{const day=h.h>=8&&h.h<20;const nd=i>0&&h.h===0;return `<div class="hr${i===0?' cur':''}${nd?' dayb':''}"><div class="h">${i===0?'Ahora':nd?dLabel(h.d):h.t.slice(11,13)+' h'}</div>${icon(h.code,day)}<div class="tt">${fmt(h.T)}°</div><div class="pp">${h.PP>=10?h.PP+'%':''}</div></div>`}).join('');
+  chart('c48',{type:'bar',data:{labels:hs.map(h=>h.h===0?dLabel(h.d):h.t.slice(11,13)+'h'),datasets:[
+    {type:'line',label:'Temperatura (°C)',data:hs.map(h=>h.T),borderColor:C.ochre,backgroundColor:'rgba(233,185,73,.15)',fill:true,tension:.35,pointRadius:0,yAxisID:'y'},
+    {type:'line',label:'Punto de rocío (°C)',data:hs.map(h=>h.Td),borderColor:C.sky,borderDash:[4,4],pointRadius:0,tension:.35,yAxisID:'y'},
+    {label:'Prob. lluvia (%)',data:hs.map(h=>h.PP),backgroundColor:'rgba(90,162,255,.35)',yAxisID:'y2',barPercentage:1,categoryPercentage:.9},
+    {label:'Lluvia (mm)',data:hs.map(h=>h.P),backgroundColor:C.rain,yAxisID:'y3',barPercentage:.5}
+  ]},options:baseOpts({y:{title:'°C'},y2:{position:'right',max:100,title:'%',grid:false},y3:{display:false,max:Math.max(4,...hs.map(h=>h.P))*1.2}})});
+  // 16 días
+  const fut=W.fdays.filter(x=>x.d>=W.today&&x.tmax!=null);
+  const lo=Math.min(...fut.map(x=>x.tmin)), hi=Math.max(...fut.map(x=>x.tmax));
+  $('#days16').innerHTML=fut.map((x,i)=>{const a=(x.tmin-lo)/(hi-lo||1)*100,b=(x.tmax-lo)/(hi-lo||1)*100;const hasH=W.hours.some(h=>h.d===x.d);return `<button class="day" type="button" data-d="${x.d}" aria-expanded="false" ${hasH?'':'data-noh="1"'}><span class="dn">${i===0?'Hoy':i===1?'Mañana':DOWL[dObj(x.d).getUTCDay()].replace(/^./,c=>c.toUpperCase())}<small>${dLong(x.d)}</small></span>${icon(x.code)}<span class="num muted">${fmt(x.tmin)}°</span><span class="bar"><i style="left:${a}%;right:${100-b}%"></i></span><span class="num">${fmt(x.tmax)}°</span><span class="num mm" style="color:${C.rain};font-size:.85rem">${x.pp!=null?x.pp+'%':''} ${x.p>0?fmt(x.p,1)+' mm':''}</span></button>`}).join('');
+  $$('#days16 .day').forEach(b=>b.onclick=()=>toggleDay(b));
+}
+function toggleDay(b){
+  const open=b.getAttribute('aria-expanded')==='true';
+  $$('#days16 .daydet').forEach(n=>n.remove()); $$('#days16 .day').forEach(x=>x.setAttribute('aria-expanded','false'));
+  if(S.charts.cday){S.charts.cday.destroy();delete S.charts.cday}
+  if(open)return;
+  b.setAttribute('aria-expanded','true');
+  const d=b.dataset.d, x=W.fdays.find(y=>y.d===d), hs=W.hours.filter(h=>h.d===d);
+  const det=document.createElement('div'); det.className='daydet';
+  det.innerHTML=`<div class="muted" style="font-size:.85rem;margin:6px 0">${WMO[x.code]||''} · viento máx. ${fmt(x.w)} km/h (rachas ${fmt(x.g)}) · UV ${fmt(x.uv,1)} · ET₀ ${fmt(x.et0,1)} mm · sol ${x.rise}–${x.set}</div>`+(hs.length?`<div class="chartbox short"><canvas id="cday"></canvas></div>`:`<div class="note">Para este día solo hay previsión diaria.</div>`);
+  b.after(det);
+  if(hs.length)chart('cday',{type:'bar',data:{labels:hs.map(h=>h.t.slice(11,13)+'h'),datasets:[{type:'line',label:'Temperatura (°C)',data:hs.map(h=>h.T),borderColor:C.ochre,tension:.35,pointRadius:0,yAxisID:'y'},{type:'line',label:'Humedad (%)',data:hs.map(h=>h.RH),borderColor:C.sky,pointRadius:0,tension:.35,yAxisID:'y2',borderWidth:1.5},{label:'Lluvia (mm)',data:hs.map(h=>h.P),backgroundColor:C.rain,yAxisID:'y3'}]},options:baseOpts({y:{title:'°C'},y2:{position:'right',min:0,max:100,grid:false,title:'%'},y3:{display:false,min:0,max:Math.max(3,...hs.map(h=>h.P))*1.3}})});
+}
+
+/* --- Chart.js común --- */
+function baseOpts(scales){
+  const sc={x:{ticks:{color:C.muted,maxRotation:0,autoSkip:true,maxTicksLimit:12,font:{family:'Figtree'}},grid:{color:C.line}}};
+  for(const [k,v] of Object.entries(scales)){sc[k]={display:v.display!==false,position:v.position||'left',min:v.min,max:v.max,stacked:v.stacked,ticks:{color:C.muted,font:{family:'IBM Plex Mono',size:10}},grid:v.grid===false?{display:false}:{color:C.line},title:v.title?{display:true,text:v.title,color:C.muted,font:{size:10}}:undefined}}
+  return {responsive:true,maintainAspectRatio:false,interaction:{mode:'index',intersect:false},animation:{duration:500},
+    plugins:{legend:{labels:{color:C.fg,boxWidth:10,boxHeight:10,font:{family:'Figtree',size:11}}},tooltip:{backgroundColor:'#0b1316',borderColor:'rgba(205,226,222,.2)',borderWidth:1,titleFont:{family:'Figtree'},bodyFont:{family:'IBM Plex Mono',size:11},callbacks:{label:c=>`${c.dataset.label}: ${c.parsed.y==null?'–':fmt(c.parsed.y,1)}`}}},scales:sc};
+}
+function chart(id,cfg){if(typeof Chart==='undefined')return;if(S.charts[id])S.charts[id].destroy();const el=document.getElementById(id);if(!el)return;S.charts[id]=new Chart(el,cfg)}
+
+/* --- historial --- */
+function renderHistory(){
+  S.histDirty=false;
+  const all=W.hist.filter(x=>x.d<=W.today);
+  let from; if(S.histR==='year')from=W.today.slice(0,4)+'-01-01'; else from=addD(W.today,-(+S.histR)+1);
+  const xs=all.filter(x=>x.d>=from);
+  if(!xs.length){$('#histKpis').innerHTML='<div class="note">No hay datos históricos para este periodo.</div>';return}
+  const tmaxR=xs.reduce((a,b)=>b.tmax>a.tmax?b:a), tminR=xs.reduce((a,b)=>b.tmin<a.tmin?b:a), wet=xs.reduce((a,b)=>b.p>a.p?b:a);
+  const P=xs.reduce((a,b)=>a+(b.p||0),0), rainy=xs.filter(x=>x.p>=1).length, avg=xs.reduce((a,b)=>a+(b.tmax+b.tmin)/2,0)/xs.length;
+  const hot=xs.filter(x=>x.tmax>=35).length, frost=xs.filter(x=>x.tmin<=0).length;
+  const et=xs.filter(x=>x.et0!=null);const ET=et.reduce((a,b)=>a+b.et0,0);
+  $('#histKpis').innerHTML=[
+    [fmt(P,1)+' mm','Lluvia acumulada',`${rainy} días con ≥ 1 mm`],
+    [fmt(avg,1)+' °C','Temperatura media',`${xs.length} días`],
+    [fmt(tmaxR.tmax,1)+' °C','Máxima más alta',dLong(tmaxR.d)],
+    [fmt(tminR.tmin,1)+' °C','Mínima más baja',dLong(tminR.d)],
+    [fmt(wet.p,1)+' mm','Día más lluvioso',wet.p>0?dLong(wet.d):'sin lluvia'],
+    [hot+' / '+frost,'Días ≥ 35 °C / heladas','calor extremo / mín. ≤ 0 °C'],
+    ...(et.length>5&&S.histR!=='year'?[[fmt(P-ET,0)+' mm','Balance hídrico','lluvia − evapotranspiración']]:[])
+  ].map(([v,l,s])=>`<div class="kpi"><div class="l">${l}</div><div class="v">${v}</div><div class="s">${s}</div></div>`).join('');
+  let cum=0;
+  chart('cHist',{type:'bar',data:{labels:xs.map(x=>dLong(x.d)),datasets:[
+    {type:'line',label:'Máxima (°C)',data:xs.map(x=>x.tmax),borderColor:C.bad,backgroundColor:'rgba(240,122,61,.12)',fill:'+1',pointRadius:xs.length>40?0:2,tension:.3,yAxisID:'y'},
+    {type:'line',label:'Mínima (°C)',data:xs.map(x=>x.tmin),borderColor:C.sky,pointRadius:xs.length>40?0:2,tension:.3,yAxisID:'y'},
+    {type:'line',label:'Lluvia acumulada (mm)',data:xs.map(x=>(cum+=x.p||0)),borderColor:'rgba(156,188,90,.9)',borderDash:[5,4],pointRadius:0,yAxisID:'y2',borderWidth:1.5},
+    {label:'Lluvia diaria (mm)',data:xs.map(x=>x.p),backgroundColor:C.rain,yAxisID:'y2'}
+  ]},options:baseOpts({y:{title:'°C'},y2:{position:'right',min:0,grid:false,title:'mm'}})});
+  renderHeat(all); renderMonths(all);
+}
+function tcol(t){const st=[[-5,[58,111,216]],[8,[134,189,227]],[18,[233,227,161]],[26,[233,185,73]],[34,[240,122,61]],[42,[200,50,58]]];if(t<=st[0][0])return `rgb(${st[0][1]})`;for(let i=1;i<st.length;i++){if(t<=st[i][0]){const [a,ca]=st[i-1],[b,cb]=st[i];const k=(t-a)/(b-a);return `rgb(${ca.map((v,j)=>Math.round(v+(cb[j]-v)*k))})`}}return `rgb(${st[st.length-1][1]})`}
+function renderHeat(all){
+  const yr=W.today.slice(0,4), xs=all.filter(x=>x.d.startsWith(yr)); if(!xs.length){$('#heat').innerHTML='';return}
+  const s=11,g=2, start=dObj(yr+'-01-01'), off=(start.getUTCDay()+6)%7;
+  const wks=Math.ceil((off+366)/7);
+  let h=`<svg width="${wks*(s+g)+30}" height="${7*(s+g)+22}" role="img" aria-label="Calendario de temperaturas máximas del año">`;
+  ['L','','X','','V','','D'].forEach((l,i)=>h+=`<text x="0" y="${16+i*(s+g)+s-2}" font-size="9" fill="${C.muted}" font-family="Figtree">${l}</text>`);
+  let lastM=-1;
+  xs.forEach(x=>{const o=dObj(x.d), n=Math.round((o-start)/864e5)+off, w=Math.floor(n/7), dw=n%7, X=14+w*(s+g), Y=16+dw*(s+g);
+    if(o.getUTCMonth()!==lastM){lastM=o.getUTCMonth();h+=`<text x="${X}" y="10" font-size="9" fill="${C.muted}" font-family="Figtree">${MONS[lastM]}</text>`}
+    h+=`<rect x="${X}" y="${Y}" width="${s}" height="${s}" rx="2.5" fill="${tcol(x.tmax)}" data-d="${x.d}"${x.d===W.today?` stroke="${C.fg}" stroke-width="1.5"`:''}/>`;
+    if(x.p>=1)h+=`<circle cx="${X+s/2}" cy="${Y+s/2}" r="${Math.min(4.5,1.6+Math.sqrt(x.p)/2)}" fill="#1e5bd8" stroke="#fff" stroke-width=".6" pointer-events="none"/>`;});
+  $('#heat').innerHTML=h+'</svg>';
+  $$('#heat rect').forEach(r=>{r.addEventListener('mousemove',e=>{const x=W.histMap.get(r.dataset.d);showTip(e,`<b>${DOWL[dObj(x.d).getUTCDay()]} ${dLong(x.d)}</b><br>Máx. ${fmt(x.tmax,1)} °C · mín. ${fmt(x.tmin,1)} °C<br>Lluvia ${fmt(x.p,1)} mm`)});r.addEventListener('mouseleave',hideTip)});
+}
+function renderMonths(all){
+  const yr=W.today.slice(0,4), M=Array.from({length:12},()=>({p:0,tx:0,tn:0,n:0}));
+  all.filter(x=>x.d.startsWith(yr)).forEach(x=>{const m=+x.d.slice(5,7)-1;M[m].p+=x.p||0;M[m].tx+=x.tmax;M[m].tn+=x.tmin;M[m].n++});
+  const k=M.map((m,i)=>i).filter(i=>M[i].n);
+  chart('cMonth',{type:'bar',data:{labels:k.map(i=>MONS[i]),datasets:[{label:'Lluvia (mm)',data:k.map(i=>M[i].p),backgroundColor:C.rain,yAxisID:'y2'},{type:'line',label:'Máx. media (°C)',data:k.map(i=>M[i].tx/M[i].n),borderColor:C.bad,tension:.3,yAxisID:'y'},{type:'line',label:'Mín. media (°C)',data:k.map(i=>M[i].tn/M[i].n),borderColor:C.sky,tension:.3,yAxisID:'y'}]},options:baseOpts({y:{title:'°C'},y2:{position:'right',min:0,grid:false,title:'mm'}})});
+}
+function showTip(e,html){const t=$('#tip');t.innerHTML=html;t.hidden=false;const w=t.offsetWidth;t.style.left=Math.min(innerWidth-w-8,e.clientX+12)+'px';t.style.top=(e.clientY+14)+'px'}
+function hideTip(){$('#tip').hidden=true}
+
+/* --- radar --- */
+function rvURL(){return `https://www.rainviewer.com/map.html?loc=${W.lat.toFixed(3)},${W.lon.toFixed(3)},8&oCS=1&c=3&o=83&lm=1&layer=radar&sm=1&sn=1`}
+let RM=null;
+function renderRadarStatic(){
+  $('#rvLink').href=rvURL();
+  if(RM&&RM.map){RM.map.setView([W.lat,W.lon],8);RM.marker.setLatLng([W.lat,W.lon]).bindTooltip(W.meta.name)}
+}
+async function initRadar(){
+  if(typeof L==='undefined'){$('#radarNote').textContent='No se pudo cargar el mapa. Comprueba la conexión y recarga la página.';return}
+  if(!RM){
+    RM={layers:[],frames:[],i:0,timer:null};
+    RM.map=L.map('map',{zoomControl:true,attributionControl:true,minZoom:5,maxZoom:11}).setView([W.lat,W.lon],8);
+    L.tileLayer('https://{s}.basemaps.cartocdn.com/dark_nolabels/{z}/{x}/{y}{r}.png',{subdomains:'abcd',maxZoom:11,attribution:'© <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> · © <a href="https://carto.com/">CARTO</a> · Radar © <a href="https://www.rainviewer.com">RainViewer</a>'}).addTo(RM.map);
+    RM.map.createPane('labels');RM.map.getPane('labels').style.zIndex=650;RM.map.getPane('labels').style.pointerEvents='none';
+    L.tileLayer('https://{s}.basemaps.cartocdn.com/dark_only_labels/{z}/{x}/{y}{r}.png',{subdomains:'abcd',pane:'labels',maxZoom:11}).addTo(RM.map);
+    RM.marker=L.circleMarker([W.lat,W.lon],{radius:8,color:'#e9b949',weight:3,fillColor:'#e9b949',fillOpacity:.25,pane:'labels'}).addTo(RM.map).bindTooltip(W.meta.name);
+  }else renderRadarStatic();
+  setTimeout(()=>RM.map.invalidateSize(),60);
+  if(!RM.frames.length||Date.now()-(RM.loaded||0)>5*60e3)await loadRadarFrames();
+}
+async function loadRadarFrames(){
+  $('#radarBtn').disabled=true;
+  try{
+    const m=await getJSON('https://api.rainviewer.com/public/weather-maps.json');
+    const past=(m.radar&&m.radar.past)||[], cast=(m.radar&&m.radar.nowcast)||[];
+    RM.layers.forEach(l=>RM.map.removeLayer(l));
+    RM.frames=past.concat(cast); RM.nPast=past.length; RM.loaded=Date.now();
+    RM.layers=RM.frames.map(f=>L.tileLayer(`${m.host}${f.path}/256/{z}/{x}/{y}/2/1_1.png`,{opacity:0,maxNativeZoom:7,maxZoom:11,zIndex:5}).addTo(RM.map));
+    $('#rRange').max=Math.max(0,RM.frames.length-1);
+    showFrame(Math.max(0,RM.nPast-1));
+    $('#radarNote').textContent=`Radar compuesto de RainViewer: últimas ${fmt(past.length/6,1)} h en pasos de 10 min${cast.length?' y previsión inmediata':''}. Se actualiza solo cada 10 minutos. El círculo dorado marca ${W.meta.name}.`;
+  }catch(e){$('#radarNote').textContent='No se pudo descargar el radar ahora mismo. Vuelve a intentarlo en unos minutos o usa los enlaces de abajo.';console.warn(e)}
+  finally{$('#radarBtn').disabled=false}
+}
+function showFrame(i){
+  if(!RM||!RM.layers.length)return; RM.i=i;
+  RM.layers.forEach((l,k)=>l.setOpacity(k===i?.8:0));
+  $('#rRange').value=i;
+  const t=new Date(RM.frames[i].time*1000);
+  $('#radarStamp').textContent=t.toLocaleTimeString('es-ES',{hour:'2-digit',minute:'2-digit'})+(i===RM.nPast-1?' · ahora':i>=RM.nPast?' · prev.':'');
+}
+function toggleRadarPlay(){
+  if(!RM)return;
+  if(RM.timer){clearInterval(RM.timer);RM.timer=null;$('#rPlay').textContent='▶';return}
+  $('#rPlay').textContent='❚❚';
+  RM.timer=setInterval(()=>showFrame((RM.i+1)%RM.layers.length),600);
+}
+function renderNowcast(){
+  const nc=W.nc; const cv=$('#nc'), x=cv.getContext('2d'); const N=cv.width;
+  const draw=t=>{
+    x.clearRect(0,0,N,N); x.fillStyle='#0f1a1d'; x.fillRect(0,0,N,N);
+    if(!nc){x.fillStyle=C.muted;x.font='16px Figtree';x.textAlign='center';x.fillText('Sin datos de precipitación inmediata',N/2,N/2);return}
+    const g=5, V=(i,j)=>{const p=nc.pts[i*g+j];return p&&p[2]?(p[2][t]||0):0};
+    const img=x.createImageData(N,N);
+    for(let py=0;py<N;py+=2)for(let px=0;px<N;px+=2){
+      const fx=px/(N-1)*(g-1), fy=(N-1-py)/(N-1)*(g-1), i0=Math.min(g-2,Math.floor(fy)), j0=Math.min(g-2,Math.floor(fx)), a=fy-i0, b=fx-j0;
+      const v=V(i0,j0)*(1-a)*(1-b)+V(i0,j0+1)*(1-a)*b+V(i0+1,j0)*a*(1-b)+V(i0+1,j0+1)*a*b;
+      if(v<.05)continue; const c=v<.3?[159,211,255,130]:v<1?[60,141,255,170]:v<2?[47,91,216,200]:v<4?[233,185,73,215]:[229,72,77,230];
+      for(let dy=0;dy<2;dy++)for(let dx=0;dx<2;dx++){const k=((py+dy)*N+(px+dx))*4;img.data[k]=c[0];img.data[k+1]=c[1];img.data[k+2]=c[2];img.data[k+3]=c[3]}
+    }
+    x.putImageData(img,0,0);
+    x.strokeStyle='rgba(205,226,222,.18)';x.lineWidth=1;
+    const kmPx=N/111; [25,50].forEach(r=>{x.beginPath();x.arc(N/2,N/2,r*kmPx,0,7);x.stroke();x.fillStyle=C.muted;x.font='12px IBM Plex Mono';x.fillText(r+' km',N/2+r*kmPx*.72+4,N/2-r*kmPx*.72)});
+    x.beginPath();x.moveTo(N/2,10);x.lineTo(N/2,N-10);x.moveTo(10,N/2);x.lineTo(N-10,N/2);x.setLineDash([3,6]);x.stroke();x.setLineDash([]);
+    x.fillStyle=C.ochre;x.beginPath();x.arc(N/2,N/2,7,0,7);x.fill();x.fillStyle=C.fg;x.font='600 15px Figtree';x.textAlign='left';x.fillText(W.meta.name,N/2+12,N/2+18);
+    x.fillStyle=C.muted;x.font='12px Figtree';x.fillText('N',N/2+6,20);
+    const tt=gen(nc.time0,24,'h'), ms=P(nc.time0)+t*9e5; const lab=F(ms).slice(11,16); const nowMs=P(W.cur.time);
+    $('#ncTime').textContent=lab+(Math.abs(ms-nowMs)<8e5?' ahora':ms<nowMs?' pasado':'');
+  };
+  S.nc.draw=draw;
+  if(nc){const nowMs=P(W.cur.time);S.nc.t=clamp(Math.round((nowMs-P(nc.time0))/9e5),0,23)}
+  $('#ncRange').value=S.nc.t; draw(S.nc.t);
+  const tot=nc?nc.pts.reduce((a,p)=>a+(p[2]||[]).reduce((s,v)=>s+(v||0),0),0):0;
+  $('#ncNote').textContent=!nc?'':tot<.1?'Sin precipitación prevista en las próximas 4 horas en unos 50 km alrededor.':'Previsión de precipitación a muy corto plazo (modelo de 15 minutos), interpolada sobre una malla de 25 puntos.';
+}
+
+/* --- cultivos --- */
+function pestDays(p){
+  const out=[];for(let k=-3;k<=7;k++){const d=addD(W.today,k), x=FEATS.get(d); if(!x){out.push(null);continue}
+    const r=p.f(x,W), m=+d.slice(5,7)-1; out.push({d,s:Math.round(r.s*p.season[m]),raw:r.s,why:r.why,k})}
+  return out;
+}
+function renderCrops(){
+  $('#cropSel').innerHTML=CROPS.map(c=>`<button class="crop" type="button" data-c="${c.id}" aria-pressed="${c.id===S.crop}">${cropIcon(c.id)}${c.name}</button>`).join('');
+  $$('#cropSel .crop').forEach(b=>b.onclick=()=>{S.crop=b.dataset.c;store.set('ms_crop',S.crop);renderCrops()});
+  $('#cropAsOf').textContent=`${W.meta.name} · actualizado ${dLong(W.today)} ${W.cur.time.slice(11,16)} h`;
+  const list=PESTS.filter(p=>p.crops.includes(S.crop)).map(p=>{const ds=pestDays(p);const now=ds.slice(3,7).filter(Boolean);const best=now.reduce((a,b)=>b.s>a.s?b:a,now[0]||{s:0});const past=ds.slice(0,3).filter(Boolean).reduce((a,b)=>Math.max(a,b.s),0);return{p,ds,cur:best,past}}).sort((a,b)=>b.cur.s-a.cur.s);
+  // indicador de presión
+  const top=list.slice(0,3), idx=top.length?Math.round(top.reduce((a,b)=>a+b.cur.s,0)/top.length):0, lv=level(idx);
+  const R=52,L=Math.PI*R;
+  $('#pressure').innerHTML=`<svg viewBox="0 0 130 80" width="170" height="104" aria-hidden="true"><path d="M13 70a52 52 0 0 1 104 0" fill="none" stroke="rgba(255,255,255,.08)" stroke-width="12" stroke-linecap="round"/><path d="M13 70a52 52 0 0 1 104 0" fill="none" stroke="${riskCol(idx)}" stroke-width="12" stroke-linecap="round" stroke-dasharray="${L*idx/100} ${L}"/><text x="65" y="64" text-anchor="middle" font-size="26" fill="${C.fg}" font-family="IBM Plex Mono">${idx}</text></svg><div><div class="eyebrow">Presión sanitaria · ${CROPS.find(c=>c.id===S.crop).name}</div><div style="font-family:var(--f-display);font-size:1.6rem;font-weight:800">${LVL[lv]}</div><div class="muted" style="font-size:.88rem">${list[0]?`Lo más urgente: <b style="color:${C.fg}">${list[0].p.name}</b>`:''}</div></div>`;
+  $('#pests').innerHTML=list.map(({p,ds,cur,past})=>{const lv=level(cur.s);return `<div class="pest" data-id="${p.id}"><button type="button" aria-expanded="false"><span class="stripe" style="background:${riskCol(cur.s)}"></span><span class="ph"><span class="nm"><b>${p.name}</b><i>${p.sci}</i></span><span class="tags"><span class="tag">${p.type}</span>${p.crops.map(c=>`<span class="tag">${CROPS.find(x=>x.id===c).name}</span>`).join('')}</span><span class="why">${esc(cur.why||'')}</span></span><span class="side"><span class="pill lv${lv}">${LVL[lv]} · ${cur.s}</span><span class="strip" aria-label="Riesgo diario">${ds.map(x=>x?`<span class="${x.k===0?'today':''}" style="background:${riskCol(x.s)};opacity:${x.k<0?.55:1}" title="${dLabel(x.d)}: ${x.s}">${x.k===0?'H':''}</span>`:'<span style="background:rgba(255,255,255,.06)"></span>').join('')}</span></span></button><div class="pd"></div></div>`}).join('')||'<div class="note">Sin modelos para este cultivo.</div>';
+  $$('#pests .pest>button').forEach(b=>b.onclick=()=>{const el=b.parentElement,open=el.classList.toggle('open');b.setAttribute('aria-expanded',open);if(open)pestDetail(el)});
+  renderImpact(); renderWindows();
+}
+function pestDetail(el){
+  const p=PESTS_BYID[el.dataset.id], ds=pestDays(p);
+  let extra='';
+  if(p.gdd){const base=p.gdd.base,g=base===10?W.g10:W.g7;extra=`<div style="margin-top:14px"><h4>Integral térmica desde el 1 de marzo (base ${fmt(base,1)} °C)</h4><div class="chartbox short"><canvas id="cg_${p.id}"></canvas></div></div>`;}
+  if(p.id==='grafolita'){extra=`<div style="margin-top:14px"><h4>Integral térmica desde el 1 de marzo (base 7,2 °C)</h4><div class="chartbox short"><canvas id="cg_${p.id}"></canvas></div></div>`}
+  el.querySelector('.pd').innerHTML=`<div class="cols"><div><h4>Condiciones que la favorecen</h4><p>${p.cond}</p></div><div><h4>Síntomas y daños</h4><p>${p.sym}</p></div><div><h4>Seguimiento y medidas</h4><ul>${p.ctl.map(c=>`<li>${c}</li>`).join('')}</ul></div><div><h4>Día a día</h4><ul>${ds.filter(Boolean).map(x=>`<li><b style="color:${riskCol(x.s)}">${x.k===0?'Hoy':dLabel(x.d)} · ${LVL[level(x.s)]} (${x.s})</b> — ${esc(x.why)}</li>`).join('')}</ul></div></div>${extra}`;
+  if(p.gdd||p.id==='grafolita'){
+    const base=p.id==='grafolita'?7.2:10, g=base===10?W.g10:W.g7;
+    const lines=p.id==='grafolita'?Array.from({length:5},(_,i)=>160+i*510+250):p.gdd.gens.map(w=>w[0]);
+    const ser=g.series;
+    chart('cg_'+p.id,{type:'line',data:{labels:ser.map(s=>dLong(s[0])),datasets:[{label:'Grados-día acumulados',data:ser.map(s=>s[1]),borderColor:C.olive,backgroundColor:'rgba(156,188,90,.15)',fill:true,pointRadius:0,tension:.2},...lines.map((v,i)=>({label:i===0?'Inicio de eclosión por generación':'',data:ser.map(()=>v),borderColor:'rgba(233,185,73,.6)',borderDash:[4,4],pointRadius:0,borderWidth:1}))]},options:Object.assign(baseOpts({y:{title:'°C·día'}}),{plugins:{legend:{labels:{color:C.fg,filter:i=>i.text,font:{family:'Figtree',size:11}}},tooltip:{enabled:true,backgroundColor:'#0b1316',filter:i=>i.datasetIndex===0}}})});
+  }
+}
+function renderImpact(){
+  const yr=+W.today.slice(0,4), td=W.today;
+  $('#campYear').textContent=yr;
+  // horas de frío desde el 1 de noviembre
+  const chillStart=(td.slice(5)>='11-01'?yr:yr-1)+'-11-01';
+  let chill=0;FEATS.forEach((f,d)=>{if(d>=chillStart&&d<=td)chill+=f.chill});
+  let chillNext=0;for(let k=1;k<=7;k++){const f=FEATS.get(addD(td,k));if(f)chillNext+=f.chill}
+  const needs={manzano:[800,1200],peral:[600,1100],melocotonero:[400,900],cerezo:[800,1400],almendro:[200,600],olivo:[300,600]}[S.crop];
+  const preChill=td.slice(5)>='09-01'&&td.slice(5)<'11-01';
+  // calor
+  const ys=W.hist.filter(x=>x.d.startsWith(String(yr)));
+  const hot=ys.filter(x=>x.tmax>=35), lastHot=hot.length?hot[hot.length-1].d:null, max=ys.reduce((a,b)=>b.tmax>a.tmax?b:a,ys[0]||{});
+  const spring=ys.filter(x=>x.d>=yr+'-03-01'&&x.d<=yr+'-05-15'&&x.tmin<=0);
+  const last30=W.hist.filter(x=>x.d>addD(td,-30)&&x.d<=td), P30=last30.reduce((a,b)=>a+(b.p||0),0), E30=last30.filter(x=>x.et0!=null).reduce((a,b)=>a+b.et0,0);
+  const storms=W.hist.filter(x=>x.d>addD(td,-60)&&x.d<=td&&x.code>=95).length, stormsF=W.fdays.filter(x=>x.d>td&&x.d<=addD(td,7)&&x.code>=95).length;
+  const frostF=W.fdays.filter(x=>x.d>td&&x.d<=addD(td,7)&&x.tmin!=null&&x.tmin<=0);
+  const heavy=W.fdays.filter(x=>x.d>=td&&x.d<=addD(td,7)&&x.p>=20);
+  const windy=W.fdays.filter(x=>x.d>=td&&x.d<=addD(td,7)&&x.g>=50);
+  const items=[
+    {t:'Horas de frío',v:preChill?`${chillNext} h`:`${fmt(chill)} h`,s:preChill?`La campaña de frío empieza el 1 de noviembre. Próximos 7 días: ${chillNext} h entre 0 y 7 °C.`:`Desde el 1 de noviembre (0–7,2 °C). ${CROPS.find(c=>c.id===S.crop).name}: necesita ${needs[0]}–${needs[1]} h.`,prog:preChill?0:clamp(chill/needs[0]),lv:null},
+    {t:'Integral térmica',v:`${fmt(W.g10.series.filter(s=>s[0]<=td).slice(-1)[0]?.[1]||0)} °C·día`,s:`Base 10 °C desde el 1 de marzo. Marca el ritmo de maduración y de las generaciones de insectos.`,lv:null},
+    {t:'Golpes de calor',v:`${hot.length} días ≥ 35 °C`,s:`${max.tmax!=null?`Máxima del año ${fmt(max.tmax,1)} °C el ${dLong(max.d)}.`:''} ${hot.length>15?'Mucho riesgo de quemaduras de sol en fruta y de calibres pequeños.':hot.length>5?'Riesgo de golpe de sol en caras expuestas.':'Verano sin estrés térmico grave.'}${lastHot?` Último: ${dLong(lastHot)}.`:''}`,lv:hot.length>15?2:hot.length>5?1:0},
+    {t:'Heladas en floración',v:spring.length?`${spring.length} noches`:'Ninguna',s:spring.length?`Mínimas ≤ 0 °C entre marzo y mediados de mayo (peor: ${fmt(Math.min(...spring.map(x=>x.tmin)),1)} °C). Revisa cuajado y russeting.`:'Sin heladas entre marzo y mediados de mayo: buen cuajado esperable.',lv:spring.length>2?2:spring.length?1:0},
+    {t:'Balance hídrico 30 días',v:`${fmt(P30-E30,0)} mm`,s:`Lluvia ${fmt(P30,1)} mm frente a ${fmt(E30,0)} mm de evapotranspiración. ${P30-E30<-60?'Déficit: el árbol depende del riego.':P30-E30<0?'Ligero déficit.':'Suelo con buena reserva.'}`,lv:P30-E30<-60?2:P30-E30<0?1:0},
+    {t:'Tormentas y granizo',v:`${storms} en 60 días`,s:`${stormsF?`Se prevén ${stormsF} días de tormenta esta semana: riesgo de granizo, revisa mallas.`:'Sin tormentas previstas los próximos 7 días.'} Tras granizo, vigila fuego bacteriano y podredumbres.`,lv:stormsF?2:storms>2?1:0},
+    {t:'Esta semana',v:[frostF.length?`${frostF.length} heladas`:null,heavy.length?`${heavy.length} días ≥ 20 mm`:null,windy.length?`rachas ≥ 50 km/h`:null].filter(Boolean).join(' · ')||'Sin avisos',s:[frostF.length?`Mínima prevista ${fmt(Math.min(...frostF.map(x=>x.tmin)),1)} °C el ${dLong(frostF[0].d)}.`:'',heavy.length?`Lluvia fuerte el ${heavy.map(x=>dLong(x.d)).join(', ')}: lava tratamientos y favorece hongos.`:'',windy.length?`Viento fuerte el ${windy.map(x=>dLong(x.d)).join(', ')}: caída de fruta y deriva.`:''].filter(Boolean).join(' ')||'Semana tranquila para el trabajo en campo.',lv:(frostF.length||heavy.length||windy.length)?1:0}
+  ];
+  $('#impact').innerHTML=items.map(i=>`<div class="imp"><div style="display:flex;justify-content:space-between;gap:8px;align-items:center"><span class="eyebrow">${i.t}</span>${i.lv!=null?`<span class="pill lv${i.lv}">${['Bien','Atención','Riesgo'][i.lv]}</span>`:''}</div><div class="v">${i.v}</div>${i.prog!=null?`<div class="prog"><i style="width:${i.prog*100}%"></i></div>`:''}<div class="muted" style="font-size:.85rem">${i.s}</div></div>`).join('');
+}
+function renderWindows(){
+  const i0=hIndexNow(), hs=W.hours.slice(i0,i0+72);
+  const st=hs.map((h,i)=>{const next=hs.slice(i,i+5);const rainSoon=next.some(n=>n.P>=.1||(n.PP??0)>=40);
+    if(h.P>=.1||rainSoon||h.W>20||h.T<5||h.T>30)return 2; if(h.W>12||h.T>27||h.RH<35||h.T<8)return 1; return 0});
+  $('#winStrip').innerHTML=hs.map((h,i)=>`<span class="${i>0&&h.h===0?'dsep':''}" style="background:${[C.ok,C.warn,C.crit][st[i]]};opacity:${h.h>=7&&h.h<=20?1:.55}" title="${dLabel(h.d)} ${h.t.slice(11,16)}: ${['buena','regular','no tratar'][st[i]]} · ${fmt(h.T)} °C · viento ${fmt(h.W)} km/h"></span>`).join('');
+  // mejor ventana diurna
+  let best=null,run=0,startI=0;
+  st.forEach((v,i)=>{const h=hs[i];const ok=v===0&&h.h>=6&&h.h<=21;if(ok){if(!run)startI=i;run++;if(!best||run>best.n)best={i:startI,n:run}}else run=0});
+  $('#winBest').innerHTML=best&&best.n>=2?`Mejor: <b style="color:${C.fg}">${dLabel(hs[best.i].d)} ${hs[best.i].t.slice(11,13)}–${String((+hs[best.i].t.slice(11,13)+best.n)%24).padStart(2,'0')} h</b>`:'Sin ventanas buenas en 72 h';
+}
+
+/* --- luna y festivos --- */
+const SYN=29.530588853;
+const moonAge=ms=>{const jd=ms/864e5+2440587.5;let a=((jd-2451550.1)/SYN)%1;if(a<0)a+=1;return a};
+const illum=a=>(1-Math.cos(2*Math.PI*a))/2;
+function phaseName(a){if(a<.03||a>.97)return 'Luna nueva';if(a<.22)return 'Creciente';if(a<.28)return 'Cuarto creciente';if(a<.47)return 'Gibosa creciente';if(a<.53)return 'Luna llena';if(a<.72)return 'Gibosa menguante';if(a<.78)return 'Cuarto menguante';return 'Menguante'}
+function moonSVG(a,size=30){
+  const r=size/2-1, cx=size/2, cy=size/2, k=Math.cos(2*Math.PI*a), rx=Math.abs(k)*r, wax=a<.5;
+  const outer=wax?1:0, term=wax?(k>0?0:1):(k>0?1:0);
+  const lit=a<.015||a>.985?'':`<path d="M${cx} ${cy-r}A${r} ${r} 0 0 ${outer} ${cx} ${cy+r}A${rx} ${r} 0 0 ${term} ${cx} ${cy-r}z" fill="#f1ead2"/>`;
+  return `<svg viewBox="0 0 ${size} ${size}" width="${size}" height="${size}" aria-hidden="true"><circle cx="${cx}" cy="${cy}" r="${r}" fill="#26363b"/>${lit}<circle cx="${cx}" cy="${cy}" r="${r}" fill="none" stroke="rgba(255,255,255,.18)"/></svg>`;
+}
+function easter(y){const a=y%19,b=Math.floor(y/100),c=y%100,d=Math.floor(b/4),e=b%4,f=Math.floor((b+8)/25),g=Math.floor((b-f+1)/3),h=(19*a+b-d-g+15)%30,i=Math.floor(c/4),k=c%4,l=(32+2*e+2*i-h-k)%7,m=Math.floor((a+11*h+22*l)/451),mo=Math.floor((h+l-7*m+114)/31),da=((h+l-7*m+114)%31)+1;return `${y}-${String(mo).padStart(2,'0')}-${String(da).padStart(2,'0')}`}
+function holidays(y){
+  const m=W.meta, cat=/catal/i.test(m.admin1||''), es=(m.country_code||'ES')==='ES', E=easter(y);
+  const L=[];
+  if(es){
+    [['01-01','Año Nuevo'],['01-06','Reyes'],['05-01','Fiesta del Trabajo'],['08-15','La Asunción'],['10-12','Fiesta Nacional'],['11-01','Todos los Santos'],['12-08','La Inmaculada'],['12-25','Navidad']].forEach(([d,n])=>L.push({d:`${y}-${d}`,n,t:'nac'}));
+    L.push({d:addD(E,-2),n:'Viernes Santo',t:'nac'});
+    if(cat){L.push({d:addD(E,1),n:'Lunes de Pascua',t:'aut'},{d:`${y}-06-24`,n:'Sant Joan',t:'aut'},{d:`${y}-09-11`,n:'Diada Nacional de Catalunya',t:'aut'},{d:`${y}-12-26`,n:'Sant Esteve',t:'aut'})}
+    else{L.push({d:addD(E,-3),n:'Jueves Santo (la mayoría de comunidades)',t:'aut'})}
+  }
+  const name=(m.name||'').toLowerCase();
+  if(name==='castelldans'){const s=dObj(`${y}-09-01`);const off=(6-s.getUTCDay()+7)%7;const sat=addD(`${y}-09-01`,off);L.push({d:sat,n:'Festa Major (Santa Coloma i Sant Fortunat)',t:'loc'},{d:addD(sat,1),n:'Festa Major',t:'loc'})}
+  if(name==='lleida'){L.push({d:`${y}-05-11`,n:'Sant Anastasi',t:'loc'},{d:`${y}-09-29`,n:'Sant Miquel',t:'loc'})}
+  return L.sort((a,b)=>a.d<b.d?-1:1);
+}
+function holNote(){
+  const m=W.meta,cat=/catal/i.test(m.admin1||''),es=(m.country_code||'ES')==='ES',n=(m.name||'').toLowerCase();
+  if(!es)return 'Fuera de España no hay calendario de festivos cargado; se muestran solo las fases lunares.';
+  let t=cat?'Festivos nacionales y de Catalunya según el calendario laboral oficial. ':`Festivos nacionales. Los autonómicos de ${m.admin1||'tu comunidad'} pueden variar: consulta el boletín oficial. `;
+  if(n==='castelldans')t+='En Castelldans se marca la Festa Major (primer fin de semana de septiembre). Las dos fiestas locales laborables las fija cada año el Ayuntamiento.';
+  else if(n==='lleida')t+='Fiestas locales de Lleida: Sant Anastasi y Sant Miquel.';
+  else t+='Las fiestas locales de cada municipio no están incluidas: consulta tu Ayuntamiento.';
+  return t;
+}
+function renderMoon(){
+  if(!S.calM)S.calM=W.today.slice(0,7);
+  const now=P(W.cur.time), a=moonAge(now);
+  const ageDays=a*SYN;
+  $('#moonToday').innerHTML=`${moonSVG(a,120)}<div><div class="eyebrow">Hoy</div><div style="font-family:var(--f-display);font-size:1.9rem;font-weight:800">${phaseName(a)}</div><div class="muted">Iluminada al ${fmt(illum(a)*100)} % · edad ${fmt(ageDays,1)} días</div><div class="muted">${a<.5?'Luna creciente: la parte iluminada aumenta':'Luna menguante: la parte iluminada disminuye'}</div></div>`;
+  // próximas fases
+  const targets=[[0,'Luna nueva'],[.25,'Cuarto creciente'],[.5,'Luna llena'],[.75,'Cuarto menguante']];
+  const out=[];
+  for(let h=1;h<24*60&&out.length<6;h++){const t0=now+(h-1)*36e5,t1=now+h*36e5,a0=moonAge(t0),a1=moonAge(t1);targets.forEach(([v,n])=>{const cross=v===0?a1<a0:(a0<v&&a1>=v);if(cross)out.push({ms:t1,n,v})})}
+  $('#moonNext').innerHTML=out.slice(0,5).map(o=>{const d=F(o.ms);return `<div class="li">${moonSVG(o.v+.0001,26)}<div style="flex:1"><b>${o.n}</b><div class="muted" style="font-size:.82rem">${DOWL[dObj(d).getUTCDay()]} ${dLong(d.slice(0,10))} · hacia las ${d.slice(11,13)} h</div></div><span class="num muted">${Math.round((o.ms-now)/864e5)} d</span></div>`}).join('');
+  renderCal();
+  const y=+W.today.slice(0,4), HL=holidays(y).concat(holidays(y+1)).filter(h=>h.d>=W.today).slice(0,10);
+  $('#holList').innerHTML=HL.length?HL.map(h=>`<div class="li"><span class="hol h-${h.t}" style="font-size:.72rem">${{nac:'Nacional',aut:'Autonómico',loc:'Local'}[h.t]}</span><div style="flex:1"><b>${esc(h.n)}</b><div class="muted" style="font-size:.82rem">${DOWL[dObj(h.d).getUTCDay()]} ${dLong(h.d)} ${h.d.slice(0,4)}</div></div><span class="num muted">${Math.round((P(h.d)-P(W.today))/864e5)} d</span></div>`).join(''):'<div class="note">Sin festivos cargados.</div>';
+  $('#holNote').textContent=holNote();
+  $('#moonLore').innerHTML=`<div class="list">${[
+    ['Creciente','Según la tradición, buena para sembrar lo que crece hacia arriba (hortalizas de hoja, cereales) y para injertar.'],
+    ['Llena','Se dice que la savia está alta: se evita podar y cortar madera.'],
+    ['Menguante','La preferida para podar frutales, cortar leña, plantar tubérculos y embotellar.'],
+    ['Nueva','Tradicionalmente, días de descanso de la tierra: labores de limpieza y abonado.']
+  ].map(([t,d],i)=>`<div class="li">${moonSVG([.12,.5,.8,.01][i],26)}<div><b>${t}</b><div class="muted" style="font-size:.85rem">${d}</div></div></div>`).join('')}</div><p class="note" style="margin-top:10px">Son costumbres del campo; los estudios agronómicos no han encontrado un efecto medible de la luna en los cultivos.</p>`;
+}
+function renderCal(){
+  const [y,m]=S.calM.split('-').map(Number);
+  $('#calTitle').textContent=MON[m-1].replace(/^./,c=>c.toUpperCase())+' '+y;
+  const first=`${y}-${String(m).padStart(2,'0')}-01`, off=(dObj(first).getUTCDay()+6)%7, H=new Map();
+  holidays(y).forEach(h=>{if(!H.has(h.d))H.set(h.d,[]);H.get(h.d).push(h)});
+  let html=['Lun','Mar','Mié','Jue','Vie','Sáb','Dom'].map(d=>`<div class="dow">${d}</div>`).join('');
+  for(let i=0;i<42;i++){
+    const d=addD(first,i-off), o=dObj(d), inM=o.getUTCMonth()===m-1;
+    if(i>=35&&!inM&&i%7===0)break;
+    const a=moonAge(P(d)+12*36e5), hs=H.get(d)||[];
+    let ph='';const a0=moonAge(P(d)),a1=moonAge(P(d)+864e5);
+    if(a1<a0)ph='Nueva';else[[.25,'C. creciente'],[.5,'Llena'],[.75,'C. menguante']].forEach(([v,n])=>{if(a0<v&&a1>=v)ph=n});
+    html+=`<div class="cell${inM?'':' out'}${d===W.today?' today':''}${o.getUTCDay()===0?' sun':''}${hs.length?' holi':''}" title="${phaseName(a)} · ${fmt(illum(a)*100)} %"><span class="dnum">${o.getUTCDate()}</span>${moonSVG(a,30)}${ph?`<span class="ph">${ph}</span>`:''}${hs.map(h=>`<span class="hol h-${h.t}">${esc(h.n)}</span>`).join('')}</div>`;
+  }
+  $('#cal').innerHTML=html;
+}
+
+/* --- pestañas --- */
+function setTab(t){
+  S.tab=t;$$('.tab').forEach(b=>b.setAttribute('aria-selected',b.dataset.tab===t));
+  $$('section.panel').forEach(p=>p.classList.toggle('on',p.id==='p-'+t));
+  if(t==='hist'&&S.histDirty!==false)renderHistory();
+  if(t==='radar')initRadar();
+  store.set('ms_tab',t);
+}
+$$('.tab').forEach(b=>b.onclick=()=>setTab(b.dataset.tab));
+$$('#histSeg button').forEach(b=>b.onclick=()=>{S.histR=b.dataset.r;$$('#histSeg button').forEach(x=>x.setAttribute('aria-pressed',x===b));renderHistory()});
+$('#calPrev').onclick=()=>{const [y,m]=S.calM.split('-').map(Number);const d=new Date(Date.UTC(y,m-2,1));S.calM=d.toISOString().slice(0,7);renderCal()};
+$('#calNext').onclick=()=>{const [y,m]=S.calM.split('-').map(Number);const d=new Date(Date.UTC(y,m,1));S.calM=d.toISOString().slice(0,7);renderCal()};
+$('#radarBtn').onclick=()=>RM?loadRadarFrames():initRadar();
+$('#rPlay').onclick=toggleRadarPlay;
+$('#rRange').oninput=e=>showFrame(+e.target.value);
+$('#ncRange').oninput=e=>{S.nc.t=+e.target.value;S.nc.draw&&S.nc.draw(S.nc.t)};
+$('#ncPlay').onclick=()=>{if(S.nc.timer){clearInterval(S.nc.timer);S.nc.timer=null;$('#ncPlay').textContent='▶';return}$('#ncPlay').textContent='❚❚';S.nc.timer=setInterval(()=>{S.nc.t=(S.nc.t+1)%24;$('#ncRange').value=S.nc.t;S.nc.draw(S.nc.t)},450)};
+function toast(t,ms=5200){const el=$('#toast');el.textContent=t;el.hidden=false;clearTimeout(toast._t);toast._t=setTimeout(()=>el.hidden=true,ms)}
+
+/* ---------- datos en directo (conexión directa) ---------- */
+async function getJSON(url){
+  let r; try{r=await fetch(url)}catch(e){throw {code:'net',message:e.message}}
+  if(!r.ok)throw {code:'http',message:'HTTP '+r.status};
+  return r.json();
+}
+const bjson=getJSON;
+function errText(e,what){
+  const c=e&&e.code;
+  if(c==='net')return `No hay conexión a internet o el servicio de datos no responde. Inténtalo de nuevo en unos segundos.`;
+  if(c==='http')return `El servicio de datos ha devuelto un error (${e.message}) al cargar ${what}. Inténtalo de nuevo más tarde.`;
+  return `No se pudo cargar ${what}.`;
+}
+function fcURL(lat,lon){return `https://api.open-meteo.com/v1/forecast?latitude=${lat}&longitude=${lon}&timezone=auto&past_days=92&forecast_days=16&current=temperature_2m,relative_humidity_2m,apparent_temperature,precipitation,weather_code,wind_speed_10m,wind_direction_10m,wind_gusts_10m,pressure_msl,is_day&daily=weather_code,temperature_2m_max,temperature_2m_min,precipitation_sum,precipitation_probability_max,wind_speed_10m_max,wind_gusts_10m_max,et0_fao_evapotranspiration,sunshine_duration,sunrise,sunset,uv_index_max,relative_humidity_2m_mean&hourly=temperature_2m,relative_humidity_2m,precipitation,precipitation_probability,weather_code,wind_speed_10m,dew_point_2m`}
+function arURL(lat,lon,today){const y=+today.slice(0,4);return `https://archive-api.open-meteo.com/v1/archive?latitude=${lat}&longitude=${lon}&timezone=auto&start_date=${y-1}-11-01&end_date=${addD(today,-1)}&daily=temperature_2m_max,temperature_2m_min,precipitation_sum,relative_humidity_2m_mean`}
+function ncURL(lat,lon){const la=[],lo=[];for(let i=-2;i<=2;i++)for(let j=-2;j<=2;j++){la.push((lat+i*.25).toFixed(3));lo.push((lon+j*.32).toFixed(3))}return `https://api.open-meteo.com/v1/forecast?latitude=${la}&longitude=${lo}&timezone=auto&minutely_15=precipitation&past_minutely_15=8&forecast_minutely_15=16`}
+
+async function refreshLive(){
+  if(!S.place||document.hidden)return;
+  S.lastLoad=Date.now();
+  try{const p=S.place;const fc=await getJSON(fcURL(p.latitude,p.longitude));let nc=null;try{nc=await getJSON(ncURL(fc.latitude,fc.longitude))}catch(e){}
+    const ar=W&&W.arRaw||null; setWorld(build({...p,fetched:fc.current.time},fc,ar,nc,'live'));
+    if(S.tab==='radar'&&RM)loadRadarFrames();
+  }catch(e){console.warn(e)}
+}
+async function loadLive(place){
+  const box=$('#obLoad'); box.hidden=false; $('#obMsg').innerHTML='';
+  const steps=['Previsión y últimos 3 meses','Historial del año','Lluvia inmediata (malla de 25 puntos)'];
+  const draw=(k,err)=>box.innerHTML=steps.map((s,i)=>`<div class="step ${i<k?'done':i===k?'on':''}">${i<k?'✓':i===k&&!err?'<span class="spin"></span>':'·'} ${s}</div>`).join('');
+  try{
+    draw(0); const fc=await bjson(fcURL(place.latitude,place.longitude));
+    draw(1); let ar=null; try{ar=await bjson(arURL(place.latitude,place.longitude,fc.current.time.slice(0,10)))}catch(e){console.warn(e)}
+    draw(2); let nc=null; try{nc=await bjson(ncURL(fc.latitude,fc.longitude))}catch(e){console.warn(e)}
+    draw(3);
+    const meta={...place,fetched:fc.current.time};
+    S.calM=null; S.place=place;
+    S.lastLoad=Date.now(); setWorld(build(meta,fc,ar,nc,'live'));
+    store.set('ms_place',JSON.stringify(place));
+    closeOb(); if(S.tab==='radar')initRadar();
+  }catch(e){draw(-1,true);box.hidden=true;$('#obMsg').innerHTML=`<div class="msg err">${esc(errText(e,'los datos'))}</div>`;console.warn(e)}
+}
+async function geocode(q){
+  const r=await bjson(`https://geocoding-api.open-meteo.com/v1/search?name=${encodeURIComponent(q)}&count=8&language=es&format=json`);
+  return (r.results||[]).map(x=>({name:x.name,latitude:x.latitude,longitude:x.longitude,admin1:x.admin1,admin2:x.admin2,admin3:x.admin3,country:x.country,country_code:x.country_code,population:x.population}));
+}
+
+/* ---------- pantalla de entrada ---------- */
+function openOb(){
+  $('#ob').hidden=false; $('#obLoad').hidden=true; $('#obResults').innerHTML=''; $('#obMsg').innerHTML='';
+  let list=KNOWN.slice();
+  try{const last=JSON.parse(store.get('ms_place')||'null');if(last&&last.latitude!=null&&!list.some(k=>k.name===last.name))list.unshift(last)}catch(e){}
+  $('#obSugg').innerHTML=list.map((k,i)=>`<button type="button" data-i="${i}">${esc(k.name)}</button>`).join('');
+  $$('#obSugg button').forEach(b=>b.onclick=()=>choose(list[+b.dataset.i]));
+  setTimeout(()=>$('#obInput').focus(),50);
+}
+function closeOb(){$('#ob').hidden=true}
+function choose(place){
+  if(place.latitude!=null){loadLive(place);return}
+  if(place.name.toLowerCase()==='castelldans'){ if(W.meta.name!=='Castelldans')setWorld(S.base); closeOb(); return }
+  $('#obMsg').innerHTML=`<div class="msg">Esta vista solo tiene guardados los datos de Castelldans. Para ${esc(place.name)} y cualquier otra población, abre MeteoSanuy en la app de escritorio de Claude: descargará los datos en directo con su navegador. <button class="btn" type="button" id="obCast" style="margin-top:8px">Ver Castelldans</button></div>`;
+  $('#obCast').onclick=()=>{if(W.meta.name!=='Castelldans')setWorld(S.base);closeOb()};
+}
+$('#obForm').onsubmit=async e=>{
+  e.preventDefault(); const q=$('#obInput').value.trim(); if(!q)return;
+  $('#obResults').innerHTML='<div class="step on"><span class="spin"></span> Buscando…</div>';
+  try{const rs=await geocode(q);
+    $('#obResults').innerHTML=rs.length?rs.map((r,i)=>`<button type="button" data-i="${i}"><b>${esc(r.name)}</b> <span class="muted">${esc([r.admin2,r.admin1,r.country].filter(Boolean).join(', '))}</span></button>`).join(''):'<div class="msg">No encuentro esa población. Prueba con otro nombre o añade la provincia.</div>';
+    $$('#obResults button').forEach(b=>b.onclick=()=>choose(rs[+b.dataset.i]));
+  }catch(err){$('#obResults').innerHTML='';$('#obMsg').innerHTML=`<div class="msg err">${esc(errText(err,'la búsqueda'))}</div>`}
+};
+$('#placeBtn').onclick=openOb;
+let qT=null;
+$('#obInput').addEventListener('input',()=>{clearTimeout(qT);const q=$('#obInput').value.trim();if(q.length<3){$('#obResults').innerHTML='';return}qT=setTimeout(()=>$('#obForm').requestSubmit(),450)});
+document.addEventListener('keydown',e=>{if(e.key==='Escape'&&!$('#ob').hidden&&W)closeOb()});
+
+/* ---------- arranque ---------- */
+async function boot(){
+  try{
+    const r=await fetch('data.json'); const d=await r.json();
+    S.base=build(d.meta,d.forecast,d.archive,d.forecast.nowcast,'saved');
+    setWorld(S.base);
+  }catch(e){toast('No se pudieron leer los datos guardados.');console.error(e)}
+  const t=store.get('ms_tab'); if(t&&$('#p-'+t))setTab(t);
+  openOb();
+  const last=store.get('ms_place'); if(last){try{const p=JSON.parse(last);$('#obInput').value=p.name}catch(e){}}
+  S.mcp=true;
+  setInterval(refreshLive,30*60e3);
+  document.addEventListener('visibilitychange',()=>{if(!document.hidden&&W&&W.source==='live'&&Date.now()-(S.lastLoad||0)>30*60e3)refreshLive()});
+}
+boot();
+})();
+</script>
+</body>
+</html>
